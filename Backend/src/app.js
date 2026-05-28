@@ -19,7 +19,10 @@ app.use(passport.initialize());
 app.use(express.json());
 app.use(cookieParser());
 app.use(cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: [
+        "http://localhost:5173",
+        "https://ai-resume-analyzer-qptge9vwi-harshwadaris-projects.vercel.app"
+    ],
     credentials: true
 }));
 
