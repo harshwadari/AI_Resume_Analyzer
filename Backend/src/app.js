@@ -21,7 +21,7 @@ app.use(cookieParser());
 app.use(cors({
     origin: [
         "http://localhost:5173",
-        "https://ai-resume-analyzer-qptge9vwi-harshwadaris-projects.vercel.app"
+        "https://ai-resume-analyzer-gray-ten.vercel.app"
     ],
     credentials: true
 }));
