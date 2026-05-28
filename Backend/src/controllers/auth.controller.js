@@ -12,23 +12,28 @@ const { sendOtpEmail, sendResetPasswordEmail, sendGoogleAuthReminderEmail, sendC
 // httpOnly prevents JavaScript access (XSS protection)
 // secure ensures cookies are sent over HTTPS only in production
 // sameSite prevents CSRF attacks
-const getCookieOptions = () => ({
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    maxAge: 24 * 60 * 60 * 1000, // 1 day
-});
+const getCookieOptions = (req) => {
+    const origin = (req && req.headers && (req.headers.origin || req.headers.referer)) || "";
+    const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1");
+
+    return {
+        httpOnly: true,
+        secure: !isLocal,
+        sameSite: isLocal ? "lax" : "None",
+        maxAge: 24 * 60 * 60 * 1000, // 1 day
+    };
+};
 
 
 // ── Helper: Generate JWT and set it as an httpOnly cookie ──
-const signTokenAndSetCookie = (user, res) => {
+const signTokenAndSetCookie = (user, res, req) => {
     const token = jwt.sign(
         { id: user._id, username: user.username },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
     );
 
-    res.cookie("token", token, getCookieOptions());
+    res.cookie("token", token, getCookieOptions(req));
     return token;
 };
 
@@ -124,7 +129,7 @@ const verifyOtpController = asyncHandler(async (req, res) => {
     await user.save();
 
     // Issue JWT token and set cookie
-    signTokenAndSetCookie(user, res);
+    signTokenAndSetCookie(user, res, req);
 
     return res.status(200).json({
         success: true,
@@ -219,7 +224,7 @@ const loginUserController = asyncHandler(async (req, res) => {
         });
     }
 
-    signTokenAndSetCookie(user, res);
+    signTokenAndSetCookie(user, res, req);
 
     return res.status(200).json({
         success: true,
@@ -245,7 +250,7 @@ const logoutUserController = asyncHandler(async (req, res) => {
         await tokenBlackListModel.create({ token });
     }
 
-    res.clearCookie("token", getCookieOptions());
+    res.clearCookie("token", getCookieOptions(req));
 
     return res.status(200).json({
         success: true,
@@ -380,10 +385,10 @@ const googleAuthCallbackController = asyncHandler(async (req, res) => {
     }
 
     // Issue JWT token and set cookie
-    signTokenAndSetCookie(req.user, res);
+    signTokenAndSetCookie(req.user, res, req);
 
     // Redirect to frontend dashboard/workspace
-    return res.redirect(`${process.env.FRONTEND_URL || "http://localhost:5173"}/workspace`);
+    return res.redirect((process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app").replace(/\/$/, "") + "/workspace");
 });
 
 
