@@ -90,7 +90,7 @@ async function sendResetPasswordEmail(to, resetUrl) {
  * @param {string} to - Recipient email address
  */
 async function sendGoogleAuthReminderEmail(to) {
-    const loginUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`;
+    const loginUrl = `${process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app"}/login`;
     const mailOptions = {
         from: `"PrepWise AI" <${process.env.EMAIL_USER}>`,
         to,

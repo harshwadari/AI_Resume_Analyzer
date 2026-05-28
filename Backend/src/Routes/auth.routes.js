@@ -77,7 +77,7 @@ authRouter.get("/google", passport.authenticate("google", { scope: ["profile", "
  */
 authRouter.get(
     "/google/callback",
-    passport.authenticate("google", { failureRedirect: `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`, session: false }),
+    passport.authenticate("google", { failureRedirect: `${process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app"}/login`, session: false }),
     authController.googleAuthCallbackController
 )
 
