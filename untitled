@@ -1,0 +1,137 @@
+{
+  "_id": {
+    "$oid": "69bf975a2cb93969b7cff3d5"
+  },
+   "selfDescription": "\"I am a 2nd year Data Engineering student from Mumbai with hands-on experience in full-stack development and machine learning. I am comfortable building end-to-end web applications using React, Next.js and PostgreSQL on the frontend and backend. I have integrated third-party APIs like OpenAI and have experience with authentication systems. On the ML side, I have worked with CNNs and SVMs for image classification. I have solved over 100 coding problems and have a decent grasp of DSA. However, I am still a student and lack professional work experience. I am weak in system design and have not worked with large-scale distributed systems. My backend experience is mostly with Django and Flask — I have not used Node.js or microservices in production.\"",
+  "matchScore": 72,
+  "technicalQuestions": [
+    {
+      "question": "Can you explain the difference between client-side and server-side rendering in Next.js, and when you would choose one over the other for performance or SEO?",
+      "intention": "Assesses practical Next.js knowledge, understanding of different rendering strategies, and their impact on performance and SEO.",
+      "answer": "I would explain how Client-Side Rendering (CSR) involves the browser rendering the page after fetching data, suitable for highly interactive dashboards. Server-Side Rendering (SSR) renders pages on the server for each request, good for dynamic, SEO-critical content. I would also touch upon Static Site Generation (SSG) for highly performant, pre-built pages."
+    },
+    {
+      "question": "Describe how you implemented secure user authentication in your Personal Finance Tracker project using Clerk. What are the key security considerations for JWT-based authentication?",
+      "intention": "Verifies practical security implementation experience and understanding of JWTs as required by the job description.",
+      "answer": "I would explain integrating Clerk for user authentication and managing sessions. For JWT-based authentication, I'd detail considerations like storing tokens securely (e.g., httpOnly cookies), using short-lived access tokens with longer-lived refresh tokens, signing tokens with strong secrets, and validating tokens on the server for every protected route to prevent unauthorized access and protect against XSS/CSRF."
+    },
+    {
+      "question": "Given your experience with PostgreSQL and Drizzle ORM, how would you approach optimizing a slow database query, and what are the advantages and disadvantages of using an ORM?",
+      "intention": "Checks database optimization skills, practical experience with ORMs like Drizzle, and a nuanced understanding of their trade-offs.",
+      "answer": "To optimize a slow query, I'd start with `EXPLAIN ANALYZE` to identify bottlenecks, then look into adding appropriate indexes, rewriting joins, or optimizing subqueries. Advantages of ORMs include type safety, reduced boilerplate, and database abstraction. Disadvantages are potential performance overhead for complex queries and the abstraction sometimes hiding underlying SQL complexity."
+    },
+    {
+      "question": "Your resume mentions integrating the OpenAI API. Can you walk through the process of integrating a third-party AI API into a web application, including error handling and managing API keys securely?",
+      "intention": "Evaluates experience with external API integration, error handling, and security best practices for sensitive credentials.",
+      "answer": "I would describe using environment variables to securely store API keys, making HTTP POST requests to the API endpoint (e.g., using `fetch` or `axios`), sending the required payload, and parsing the JSON response. For error handling, I'd include `try-catch` blocks for network errors, checking HTTP status codes (4xx, 5xx) for API-specific errors, and implementing retry mechanisms for transient issues."
+    },
+    {
+      "question": "You implemented Convolutional Neural Networks (CNNs) for MRI Brain Tumor Classification. Can you explain the core components of a CNN and how they are particularly effective for image recognition tasks compared to traditional neural networks?",
+      "intention": "Probes into Machine Learning expertise, specifically understanding CNN architecture and its advantages for image processing, as highlighted in a key project.",
+      "answer": "I would explain CNNs consist of convolutional layers (for feature extraction using filters), pooling layers (for dimensionality reduction), and fully connected layers (for classification). Their effectiveness for images comes from properties like local receptive fields, shared weights (reducing parameters), and translation invariance, which traditional neural networks lack when processing raw pixel data directly."
+    }
+  ],
+  "behavioralQuestions": [
+    {
+      "question": "Tell me about a time you had to learn a new technology or framework quickly for a project. How did you approach it, and what was the outcome?",
+      "intention": "Checks adaptability, self-learning ability, and initiative in acquiring new technical skills.",
+      "answer": "STAR method: Describe a Situation (e.g., needing to integrate Drizzle ORM for type-safe database interactions in the Personal Finance Tracker). Explain the Task (learn Drizzle quickly to meet project goals). Detail the Action (consulted documentation, followed tutorials, built small prototypes, asked for help in communities). Conclude with the Result (successfully integrated Drizzle, improving code quality and development speed)."
+    },
+    {
+      "question": "Describe a situation where you encountered a significant technical challenge in one of your projects. How did you diagnose the problem, and what steps did you take to resolve it?",
+      "intention": "Evaluates problem-solving skills, critical thinking, persistence, and debugging methodology.",
+      "answer": "STAR method: Explain a Situation (e.g., a subtle bug in data processing logic or an API integration issue). Outline the Task (identify the root cause and fix it). Detail the Action (used debugging tools, reviewed logs, isolated components, researched solutions, experimented with different approaches). Conclude with the Result (successfully resolved the issue, learning a new debugging technique or design pattern)."
+    },
+    {
+      "question": "Collaboration is key in our team. Can you give an example of a time you worked effectively with others on a project, even if it was a group assignment or hackathon?",
+      "intention": "Checks teamwork, communication, and ability to work effectively in a collaborative environment.",
+      "answer": "STAR method: Describe a Situation (e.g., a group project during coursework or a team hackathon where roles were divided). Explain the Task (collaborate to deliver a functional product within a deadline). Detail the Action (communicated regularly, used version control effectively, provided constructive feedback, helped teammates). Conclude with the Result (successfully completed the project, achieving shared goals and a positive team dynamic)."
+    },
+    {
+      "question": "As a junior developer, you'll be receiving feedback and participating in code reviews. Tell me about a time you received constructive criticism on your work. How did you respond, and what did you learn from it?",
+      "intention": "Assesses coachability, humility, willingness to learn from others, and ability to incorporate feedback.",
+      "answer": "STAR method: Describe a Situation (e.g., feedback on project code from a peer or mentor). Explain the Task (understand the feedback and improve the code/process). Detail the Action (listened actively, asked clarifying questions, acknowledged the feedback, implemented the suggested changes, and reflected on the learning). Conclude with the Result (improved code quality, adopted a better coding practice, and demonstrated openness to growth)."
+    }
+  ],
+  "skillGaps": [
+    {
+      "skill": "System Design Principles",
+      "severity": "high"
+    },
+    {
+      "skill": "Node.js Backend Development",
+      "severity": "medium"
+    },
+    {
+      "skill": "Professional Production Experience",
+      "severity": "medium"
+    }
+  ],
+  "preparationPlan": [
+    {
+      "day": 1,
+      "focus": "Data Structures & Algorithms Mastery",
+      "tasks": [
+        "Review common data structures (arrays, linked lists, trees, graphs) and their time/space complexities",
+        "Solve 5-7 LeetCode medium problems focusing on arrays, strings, and recursion patterns"
+      ],
+      "_id": {
+        "$oid": "69bf975a2cb93969b7cff3d6"
+      }
+    },
+    {
+      "day": 2,
+      "focus": "System Design Fundamentals",
+      "tasks": [
+        "Study components of scalable systems (load balancers, CDNs, databases, message queues)",
+        "Practice outlining High-Level Design for a familiar application (e.g., URL shortener, Instagram feed)"
+      ],
+      "_id": {
+        "$oid": "69bf975a2cb93969b7cff3d7"
+      }
+    },
+    {
+      "day": 3,
+      "focus": "Behavioral & Project Deep Dive",
+      "tasks": [
+        "Prepare 5-7 detailed STAR stories covering challenges, teamwork, learning, and initiative",
+        "Deeply review all projects, anticipating technical questions, design choices, and trade-offs"
+      ],
+      "_id": {
+        "$oid": "69bf975a2cb93969b7cff3d8"
+      }
+    },
+    {
+      "day": 4,
+      "focus": "Backend Technology Expansion (Node.js)",
+      "tasks": [
+        "Complete a hands-on tutorial for building a basic REST API with Node.js and Express.js",
+        "Understand concepts like middleware, routing, and connecting to PostgreSQL from Node.js"
+      ],
+      "_id": {
+        "$oid": "69bf975a2cb93969b7cff3d9"
+      }
+    },
+    {
+      "day": 5,
+      "focus": "Mock Interview & Review",
+      "tasks": [
+        "Conduct a full-length mock interview covering DSA, system design, and behavioral questions",
+        "Thoroughly review performance, identify areas for improvement, and refine answers"
+      ],
+      "_id": {
+        "$oid": "69bf975a2cb93969b7cff3da"
+      }
+    }
+  ],
+  "user": {
+    "$oid": "69bbdc85f0ddabe37e6fb5c1"
+  },
+  "createdAt": {
+    "$date": "2026-03-22T07:16:42.387Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-22T07:16:42.387Z"
+  },
+  "__v": 0
+}
