@@ -45,6 +45,10 @@ const createAndSendVerificationOtp = async (user) => {
     await sendOtpEmail(user.email, otp);
 };
 
+const isEmailServiceConfigured = () => {
+    return Boolean(process.env.BREVO_API_KEY || (process.env.EMAIL_USER && process.env.EMAIL_PASS));
+};
+
 
 /**
  * @route POST /api/auth/register
@@ -55,8 +59,8 @@ const createAndSendVerificationOtp = async (user) => {
 const registerUserController = asyncHandler(async (req, res) => {
     const { username, email, password } = req.body;
 
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        throw new AppError("Backend email service is not configured. Please ensure EMAIL_USER and EMAIL_PASS environment variables are set in the backend configuration.", 500);
+    if (!isEmailServiceConfigured()) {
+        throw new AppError("Backend email service is not configured. Please configure BREVO_API_KEY or EMAIL_USER and EMAIL_PASS.", 500);
     }
 
     if (!username || !email || !password) {
@@ -345,8 +349,8 @@ const getMeController = asyncHandler(async (req, res) => {
 const forgotPasswordController = asyncHandler(async (req, res) => {
     const { email } = req.body;
 
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        throw new AppError("Backend email service is not configured. Please ensure EMAIL_USER and EMAIL_PASS environment variables are set in the backend configuration.", 500);
+    if (!isEmailServiceConfigured()) {
+        throw new AppError("Backend email service is not configured. Please configure BREVO_API_KEY or EMAIL_USER and EMAIL_PASS.", 500);
     }
 
     if (!email) {
