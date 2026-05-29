@@ -46,6 +46,10 @@ const signTokenAndSetCookie = (user, res) => {
 const registerUserController = asyncHandler(async (req, res) => {
     const { username, email, password } = req.body;
 
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new AppError("Backend email service is not configured. Please ensure EMAIL_USER and EMAIL_PASS environment variables are set in the backend configuration.", 500);
+    }
+
     if (!username || !email || !password) {
         throw new AppError("Please provide username, email and password", 400);
     }
@@ -136,11 +140,12 @@ const verifyOtpController = asyncHandler(async (req, res) => {
     await user.save();
 
     // Issue JWT token and set cookie
-    signTokenAndSetCookie(user, res);
+    const token = signTokenAndSetCookie(user, res);
 
     return res.status(200).json({
         success: true,
         message: "Email verified successfully",
+        token,
         user: {
             id: user._id,
             username: user.username,
@@ -242,11 +247,12 @@ const loginUserController = asyncHandler(async (req, res) => {
         });
     }
 
-    signTokenAndSetCookie(user, res);
+    const token = signTokenAndSetCookie(user, res);
 
     return res.status(200).json({
         success: true,
         message: "User logged in successfully",
+        token,
         user: {
             id: user._id,
             username: user.username,
@@ -262,7 +268,7 @@ const loginUserController = asyncHandler(async (req, res) => {
  * @access Public
  */
 const logoutUserController = asyncHandler(async (req, res) => {
-    const token = req.cookies.token;
+    const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
 
     if (token) {
         await tokenBlackListModel.create({ token });
@@ -311,6 +317,10 @@ const getMeController = asyncHandler(async (req, res) => {
  */
 const forgotPasswordController = asyncHandler(async (req, res) => {
     const { email } = req.body;
+
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new AppError("Backend email service is not configured. Please ensure EMAIL_USER and EMAIL_PASS environment variables are set in the backend configuration.", 500);
+    }
 
     if (!email) {
         throw new AppError("Please provide email", 400);
@@ -474,6 +484,7 @@ const setTokenController = asyncHandler(async (req, res) => {
     return res.status(200).json({
         success: true,
         message: "Token set successfully",
+        token,
     });
 });
 

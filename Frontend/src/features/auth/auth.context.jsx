@@ -20,8 +20,13 @@ export const AuthProvider = ({ children }) => {
         const tokenFromUrl = params.get("token");
 
         if (tokenFromUrl) {
-          // Send the token to the backend to set it as an httpOnly cookie
-          await setToken(tokenFromUrl);
+          try {
+            // Send the token to the backend to set it as an httpOnly cookie
+            await setToken(tokenFromUrl);
+          } catch (tokenErr) {
+            console.error("Failed to call setToken endpoint, storing locally:", tokenErr);
+            localStorage.setItem("token", tokenFromUrl);
+          }
 
           // Clean the token from the URL so it's not visible/bookmarked
           const cleanUrl = window.location.pathname;

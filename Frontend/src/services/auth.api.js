@@ -9,6 +9,20 @@ const api = axios.create({
     withCredentials: true,
 });
 
+// Interceptor to attach Authorization header if token exists in localStorage
+api.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem("token");
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+    },
+    (error) => {
+        return Promise.reject(error);
+    }
+);
+
 export async function register({ username, email, password }) {
     try {
         const response = await api.post(
@@ -28,6 +42,9 @@ export async function login({ email, password }) {
             `${API_BASE}/login`,
             { email, password }
         );
+        if (response.data?.token) {
+            localStorage.setItem("token", response.data.token);
+        }
         return response.data;
     } catch (err) {
         console.error("Login API error:", err);
@@ -40,9 +57,11 @@ export async function logout() {
         const response = await api.get(
             `${API_BASE}/logout`
         );
+        localStorage.removeItem("token");
         return response.data;
     } catch (err) {
         console.error("Logout API error:", err);
+        localStorage.removeItem("token");
         throw err;
     }
 }
@@ -67,6 +86,9 @@ export async function verifyOtp({ email, otp }) {
             `${API_BASE}/verify-otp`,
             { email, otp }
         );
+        if (response.data?.token) {
+            localStorage.setItem("token", response.data.token);
+        }
         return response.data;
     } catch (err) {
         console.error("VerifyOtp API error:", err);
@@ -117,15 +139,16 @@ export async function resetPassword({ token, password }) {
 
 export async function setToken(token) {
     try {
-        const response = await axios.post(
+        const response = await api.post(
             `${API_BASE}/set-token`,
-            { token },
-            { withCredentials: true }
+            { token }
         );
+        localStorage.setItem("token", token);
         return response.data;
     } catch (err) {
         console.error("SetToken API error:", err);
-        throw err;
+        localStorage.setItem("token", token);
+        return { success: true }; // return success as we saved it locally anyway
     }
 }
 
