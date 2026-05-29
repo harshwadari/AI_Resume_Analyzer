@@ -84,7 +84,7 @@ const registerUserController = asyncHandler(async (req, res) => {
         // and throw a clean error.
         await userModel.findByIdAndDelete(user._id);
         console.error("Failed to send verification email on registration:", emailError);
-        throw new AppError(`Failed to send verification email: ${emailError.message}`, 500);
+        throw new AppError("Failed to send verification email. Please check your email address or try again.", 500);
     }
 
     return res.status(201).json({
@@ -188,7 +188,7 @@ const resendOtpController = asyncHandler(async (req, res) => {
         await sendOtpEmail(email, otp);
     } catch (emailError) {
         console.error("Failed to resend OTP email:", emailError);
-        throw new AppError(`Failed to resend verification email: ${emailError.message}`, 500);
+        throw new AppError("Failed to resend verification email. Please try again later.", 500);
     }
 
     return res.status(200).json({
@@ -237,7 +237,7 @@ const loginUserController = asyncHandler(async (req, res) => {
             await sendOtpEmail(email, otp);
         } catch (emailError) {
             console.error("Failed to send verification email on login:", emailError);
-            throw new AppError(`Email not verified. We attempted to send a new OTP, but the email service failed: ${emailError.message}`, 500);
+            throw new AppError("Email not verified. We attempted to send a new OTP, but the email service failed. Please try again later.", 500);
         }
 
         return res.status(403).json({
@@ -358,7 +358,7 @@ const forgotPasswordController = asyncHandler(async (req, res) => {
         await sendResetPasswordEmail(email, resetUrl);
     } catch (emailError) {
         console.error("Failed to send reset password email:", emailError);
-        throw new AppError(`Failed to send password reset email: ${emailError.message}`, 500);
+        throw new AppError("Failed to send password reset email. Please try again later.", 500);
     }
 
     return res.status(200).json({
