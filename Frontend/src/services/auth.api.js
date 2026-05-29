@@ -3,12 +3,17 @@ import axios from "axios";
 const VITE_API_URL = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
 const API_BASE = `${VITE_API_URL}/api/auth`;
 
+// Create axios instance with timeout to prevent infinite hangs
+const api = axios.create({
+    timeout: 60000, // 60 seconds — enough for slow email sending on Render free tier
+    withCredentials: true,
+});
+
 export async function register({ username, email, password }) {
     try {
-        const response = await axios.post(
+        const response = await api.post(
             `${API_BASE}/register`,
-            { username, email, password },
-            { withCredentials: true }
+            { username, email, password }
         );
         return response.data;
     } catch (err) {
@@ -19,10 +24,9 @@ export async function register({ username, email, password }) {
 
 export async function login({ email, password }) {
     try {
-        const response = await axios.post(
+        const response = await api.post(
             `${API_BASE}/login`,
-            { email, password },
-            { withCredentials: true }
+            { email, password }
         );
         return response.data;
     } catch (err) {
@@ -33,9 +37,8 @@ export async function login({ email, password }) {
 
 export async function logout() {
     try {
-        const response = await axios.get(
-            `${API_BASE}/logout`,
-            { withCredentials: true }
+        const response = await api.get(
+            `${API_BASE}/logout`
         );
         return response.data;
     } catch (err) {
@@ -46,9 +49,8 @@ export async function logout() {
 
 export async function getMe() {
     try {
-        const response = await axios.get(
-            `${API_BASE}/get-me`,
-            { withCredentials: true }
+        const response = await api.get(
+            `${API_BASE}/get-me`
         );
         return response.data;
     } catch (err) {
@@ -61,10 +63,9 @@ export async function getMe() {
 
 export async function verifyOtp({ email, otp }) {
     try {
-        const response = await axios.post(
+        const response = await api.post(
             `${API_BASE}/verify-otp`,
-            { email, otp },
-            { withCredentials: true }
+            { email, otp }
         );
         return response.data;
     } catch (err) {
@@ -75,10 +76,9 @@ export async function verifyOtp({ email, otp }) {
 
 export async function resendOtp({ email }) {
     try {
-        const response = await axios.post(
+        const response = await api.post(
             `${API_BASE}/resend-otp`,
-            { email },
-            { withCredentials: true }
+            { email }
         );
         return response.data;
     } catch (err) {
@@ -91,10 +91,9 @@ export async function resendOtp({ email }) {
 
 export async function forgotPassword({ email }) {
     try {
-        const response = await axios.post(
+        const response = await api.post(
             `${API_BASE}/forgot-password`,
-            { email },
-            { withCredentials: true }
+            { email }
         );
         return response.data;
     } catch (err) {
@@ -105,10 +104,9 @@ export async function forgotPassword({ email }) {
 
 export async function resetPassword({ token, password }) {
     try {
-        const response = await axios.post(
+        const response = await api.post(
             `${API_BASE}/reset-password`,
-            { token, password },
-            { withCredentials: true }
+            { token, password }
         );
         return response.data;
     } catch (err) {
@@ -123,10 +121,9 @@ export function getGoogleAuthUrl() {
 
 export async function contact({ name, email, message }) {
     try {
-        const response = await axios.post(
+        const response = await api.post(
             `${API_BASE}/contact`,
-            { name, email, message },
-            { withCredentials: true }
+            { name, email, message }
         );
         return response.data;
     } catch (err) {

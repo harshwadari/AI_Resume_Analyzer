@@ -12,28 +12,27 @@ const { sendOtpEmail, sendResetPasswordEmail, sendGoogleAuthReminderEmail, sendC
 // httpOnly prevents JavaScript access (XSS protection)
 // secure ensures cookies are sent over HTTPS only in production
 // sameSite prevents CSRF attacks
-const getCookieOptions = (req) => {
-    const origin = (req && req.headers && (req.headers.origin || req.headers.referer)) || "";
-    const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1");
+const getCookieOptions = () => {
+    const isProduction = process.env.NODE_ENV === "production";
 
     return {
         httpOnly: true,
-        secure: !isLocal,
-        sameSite: isLocal ? "lax" : "None",
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
         maxAge: 24 * 60 * 60 * 1000, // 1 day
     };
 };
 
 
 // ── Helper: Generate JWT and set it as an httpOnly cookie ──
-const signTokenAndSetCookie = (user, res, req) => {
+const signTokenAndSetCookie = (user, res) => {
     const token = jwt.sign(
         { id: user._id, username: user.username },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
     );
 
-    res.cookie("token", token, getCookieOptions(req));
+    res.cookie("token", token, getCookieOptions());
     return token;
 };
 
@@ -74,7 +73,15 @@ const registerUserController = asyncHandler(async (req, res) => {
     await user.save();
 
     // Send OTP email
-    await sendOtpEmail(email, otp);
+    try {
+        await sendOtpEmail(email, otp);
+    } catch (emailError) {
+        // If sending email fails, delete the created user so they can try again,
+        // and throw a clean error.
+        await userModel.findByIdAndDelete(user._id);
+        console.error("Failed to send verification email on registration:", emailError);
+        throw new AppError("Failed to send verification email. Please check your SMTP configuration or try again.", 500);
+    }
 
     return res.status(201).json({
         success: true,
@@ -129,7 +136,7 @@ const verifyOtpController = asyncHandler(async (req, res) => {
     await user.save();
 
     // Issue JWT token and set cookie
-    signTokenAndSetCookie(user, res, req);
+    signTokenAndSetCookie(user, res);
 
     return res.status(200).json({
         success: true,
@@ -172,7 +179,12 @@ const resendOtpController = asyncHandler(async (req, res) => {
     user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
     await user.save();
 
-    await sendOtpEmail(email, otp);
+    try {
+        await sendOtpEmail(email, otp);
+    } catch (emailError) {
+        console.error("Failed to resend OTP email:", emailError);
+        throw new AppError("Failed to resend verification email. Please check your SMTP configuration or try again.", 500);
+    }
 
     return res.status(200).json({
         success: true,
@@ -215,7 +227,13 @@ const loginUserController = asyncHandler(async (req, res) => {
         user.otp = otp;
         user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
         await user.save();
-        await sendOtpEmail(email, otp);
+        
+        try {
+            await sendOtpEmail(email, otp);
+        } catch (emailError) {
+            console.error("Failed to send verification email on login:", emailError);
+            throw new AppError("Email not verified. We attempted to send a new OTP, but the email service failed. Please try again later.", 500);
+        }
 
         return res.status(403).json({
             success: false,
@@ -224,7 +242,7 @@ const loginUserController = asyncHandler(async (req, res) => {
         });
     }
 
-    signTokenAndSetCookie(user, res, req);
+    signTokenAndSetCookie(user, res);
 
     return res.status(200).json({
         success: true,
@@ -250,7 +268,7 @@ const logoutUserController = asyncHandler(async (req, res) => {
         await tokenBlackListModel.create({ token });
     }
 
-    res.clearCookie("token", getCookieOptions(req));
+    res.clearCookie("token", getCookieOptions());
 
     return res.status(200).json({
         success: true,
@@ -326,7 +344,12 @@ const forgotPasswordController = asyncHandler(async (req, res) => {
 
     // Build the reset URL pointing to the frontend page
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${rawToken}`;
-    await sendResetPasswordEmail(email, resetUrl);
+    try {
+        await sendResetPasswordEmail(email, resetUrl);
+    } catch (emailError) {
+        console.error("Failed to send reset password email:", emailError);
+        throw new AppError("Failed to send password reset email. Please try again later.", 500);
+    }
 
     return res.status(200).json({
         success: true,
@@ -381,14 +404,16 @@ const resetPasswordController = asyncHandler(async (req, res) => {
  */
 const googleAuthCallbackController = asyncHandler(async (req, res) => {
     if (!req.user) {
-        throw new AppError("Google authentication failed", 401);
+        const frontendUrl = (process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app").replace(/\/$/, "");
+        return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
     }
 
     // Issue JWT token and set cookie
-    signTokenAndSetCookie(req.user, res, req);
+    signTokenAndSetCookie(req.user, res);
 
     // Redirect to frontend dashboard/workspace
-    return res.redirect((process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app").replace(/\/$/, "") + "/workspace");
+    const frontendUrl = (process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app").replace(/\/$/, "");
+    return res.redirect(`${frontendUrl}/workspace`);
 });
 
 
