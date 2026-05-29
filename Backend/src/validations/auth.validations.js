@@ -47,7 +47,8 @@ const verifyOtpSchema = z.object({
         .email("Please enter a valid email"),
     otp: z
         .string({ required_error: "OTP is required" })
-        .length(6, "OTP must be exactly 6 digits"),
+        .trim()
+        .regex(/^\d{6}$/, "OTP must be exactly 6 digits"),
 });
 
 const resendOtpSchema = z.object({

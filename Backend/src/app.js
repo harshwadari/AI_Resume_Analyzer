@@ -10,6 +10,11 @@ const passport = require("passport");
 require("./config/passport.config");
 
 const app = express();
+const allowedOrigins = [
+    "http://localhost:5173",
+    "https://ai-resume-analyzer-gray-ten.vercel.app",
+    process.env.FRONTEND_URL,
+].filter(Boolean).map((origin) => origin.replace(/\/$/, ""));
 
 // ── Security: Helmet sets various HTTP headers to protect against
 // common attacks like XSS, clickjacking, MIME-type sniffing, etc. ──
@@ -19,10 +24,13 @@ app.use(passport.initialize());
 app.use(express.json());
 app.use(cookieParser());
 app.use(cors({
-    origin: [
-        "http://localhost:5173",
-        "https://ai-resume-analyzer-gray-ten.vercel.app"
-    ],
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ""))) {
+            return callback(null, true);
+        }
+
+        return callback(new AppError("Not allowed by CORS", 403));
+    },
     credentials: true
 }));
 

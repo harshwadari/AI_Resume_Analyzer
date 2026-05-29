@@ -10,8 +10,8 @@ const VerifyOtp = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Get email from navigation state (passed by Register or Login page)
-  const email = location.state?.email || "";
+  const storedEmail = localStorage.getItem("pendingVerificationEmail") || "";
+  const email = location.state?.email || storedEmail;
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [formError, setFormError] = useState("");
@@ -23,7 +23,10 @@ const VerifyOtp = () => {
   useEffect(() => {
     if (!email) {
       navigate("/register", { replace: true });
+      return;
     }
+
+    localStorage.setItem("pendingVerificationEmail", email);
   }, [email, navigate]);
 
   // Countdown timer for resend button
@@ -81,6 +84,7 @@ const VerifyOtp = () => {
 
     const result = await handleVerifyOtp({ email, otp: otpString });
     if (result.success) {
+      localStorage.removeItem("pendingVerificationEmail");
       navigate("/workspace");
     }
   };

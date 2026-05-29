@@ -25,7 +25,7 @@ export const useAuth = () => {
       // If server says email not verified, pass that info to the caller
       if (errorData?.requiresVerification) {
         setError(errorData.message);
-        return { success: false, requiresVerification: true, email };
+        return { success: false, requiresVerification: true, email: errorData.email || email };
       }
 
       setError(errorData?.message || "Unable to login right now");
@@ -43,7 +43,7 @@ export const useAuth = () => {
 
       // Registration now requires OTP verification — don't set user yet
       if (data?.requiresVerification) {
-        return { success: true, requiresVerification: true };
+        return { success: true, requiresVerification: true, email: data.email || email };
       }
 
       // Fallback: if somehow user is returned directly (shouldn't happen now)

@@ -26,10 +26,13 @@ const Login = () => {
 
     const result = await handleLogin({ email, password });
     if (result.success) {
+      localStorage.removeItem("pendingVerificationEmail");
       navigate("/workspace");
     } else if (result.requiresVerification) {
       // Email not verified — redirect to OTP page
-      navigate("/verify-otp", { state: { email: result.email } });
+      const verificationEmail = result.email || email;
+      localStorage.setItem("pendingVerificationEmail", verificationEmail);
+      navigate("/verify-otp", { state: { email: verificationEmail } });
     }
   };
 

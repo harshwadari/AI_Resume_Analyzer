@@ -36,6 +36,15 @@ const signTokenAndSetCookie = (user, res) => {
     return token;
 };
 
+const createAndSendVerificationOtp = async (user) => {
+    const otp = generateOtp();
+    user.otp = otp;
+    user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+    await user.save();
+
+    await sendOtpEmail(user.email, otp);
+};
+
 
 /**
  * @route POST /api/auth/register
@@ -54,13 +63,42 @@ const registerUserController = asyncHandler(async (req, res) => {
         throw new AppError("Please provide username, email and password", 400);
     }
 
-    // Check if email or username already taken
-    const isUserAlreadyExists = await userModel.findOne({
-        $or: [{ username }, { email }]
-    });
+    const existingEmailUser = await userModel.findOne({ email });
+    const existingUsernameUser = await userModel.findOne({ username });
 
-    if (isUserAlreadyExists) {
-        throw new AppError("Account already exists with this email or username", 400);
+    if (existingUsernameUser && (!existingEmailUser || !existingUsernameUser._id.equals(existingEmailUser._id))) {
+        throw new AppError("Account already exists with this username", 400);
+    }
+
+    if (existingEmailUser) {
+        const canRefreshUnverifiedSignup = !existingEmailUser.isVerified
+            && existingEmailUser.authProvider === "local";
+
+        if (!canRefreshUnverifiedSignup) {
+            throw new AppError("Account already exists with this email", 400);
+        }
+
+        existingEmailUser.username = username;
+        existingEmailUser.password = password;
+
+        try {
+            await createAndSendVerificationOtp(existingEmailUser);
+        } catch (emailError) {
+            console.error("Failed to send verification email on registration retry:", emailError);
+            throw new AppError("Failed to send verification email. Please check your email address or try again.", 500);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "A new OTP has been sent to your email. Please verify to continue.",
+            requiresVerification: true,
+            email: existingEmailUser.email,
+            user: {
+                id: existingEmailUser._id,
+                username: existingEmailUser.username,
+                email: existingEmailUser.email,
+            }
+        });
     }
 
     // Create user (password hashed automatically by pre-save hook)
@@ -70,15 +108,8 @@ const registerUserController = asyncHandler(async (req, res) => {
         password,
     });
 
-    // Generate 6-digit OTP and set 5-minute expiry
-    const otp = generateOtp();
-    user.otp = otp;
-    user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-    await user.save();
-
-    // Send OTP email
     try {
-        await sendOtpEmail(email, otp);
+        await createAndSendVerificationOtp(user);
     } catch (emailError) {
         // If sending email fails, delete the created user so they can try again,
         // and throw a clean error.
@@ -91,6 +122,7 @@ const registerUserController = asyncHandler(async (req, res) => {
         success: true,
         message: "Registration successful. OTP sent to your email. Please verify to continue.",
         requiresVerification: true,
+        email: user.email,
         user: {
             id: user._id,
             username: user.username,
@@ -227,14 +259,8 @@ const loginUserController = asyncHandler(async (req, res) => {
 
     // Block login if email is not verified
     if (!user.isVerified) {
-        // Send a fresh OTP so the user can verify
-        const otp = generateOtp();
-        user.otp = otp;
-        user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
-        await user.save();
-        
         try {
-            await sendOtpEmail(email, otp);
+            await createAndSendVerificationOtp(user);
         } catch (emailError) {
             console.error("Failed to send verification email on login:", emailError);
             throw new AppError("Email not verified. We attempted to send a new OTP, but the email service failed. Please try again later.", 500);
@@ -244,6 +270,7 @@ const loginUserController = asyncHandler(async (req, res) => {
             success: false,
             message: "Email not verified. A new OTP has been sent to your email.",
             requiresVerification: true,
+            email: user.email,
         });
     }
 

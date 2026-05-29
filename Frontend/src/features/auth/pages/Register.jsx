@@ -27,9 +27,11 @@ const Register = () => {
 
     const result = await handleRegister({ username, email, password });
     if (result.success && result.requiresVerification) {
-      // Navigate to OTP verification page, passing email in route state
-      navigate("/verify-otp", { state: { email } });
+      const verificationEmail = result.email || email;
+      localStorage.setItem("pendingVerificationEmail", verificationEmail);
+      navigate("/verify-otp", { state: { email: verificationEmail } });
     } else if (result.success) {
+      localStorage.removeItem("pendingVerificationEmail");
       navigate("/workspace");
     }
   };
