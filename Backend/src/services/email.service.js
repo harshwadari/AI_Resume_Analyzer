@@ -9,12 +9,21 @@ const nodemailer = require("nodemailer");
  *   EMAIL_PASS — Gmail App Password (16-character code)
  */
 
+const emailPassword = (process.env.EMAIL_PASS || "").replace(/\s/g, "");
+
 // Create reusable transporter (created once, reused for all emails)
 const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    requireTLS: true,
+    family: 4,
     auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        pass: emailPassword,
+    },
+    tls: {
+        servername: "smtp.gmail.com",
     },
     connectionTimeout: 10000, // 10 seconds connection timeout
     greetingTimeout: 10000,   // 10 seconds greeting timeout
