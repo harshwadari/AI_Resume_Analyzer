@@ -56,32 +56,7 @@ authRouter.post("/reset-password", validate(resetPasswordSchema), authController
  */
 authRouter.get("/logout", authController.logoutUserController)
 
-/**
- * @route GET /api/auth/test-email
- * @desc Test email sending via Brevo
- * @access Public
- */
-authRouter.get("/test-email", async (req, res) => {
-    try {
-        const toAddress = req.query.to || process.env.EMAIL_USER || "project.noreplies@gmail.com";
-        await sendOtpEmail(toAddress, "123456");
 
-        res.json({
-            success: true,
-            message: `OTP email triggered via Brevo to ${toAddress}. Check your inbox/spam folder.`,
-            fromEmail: process.env.BREVO_FROM_EMAIL || "project.noreplies@gmail.com",
-            to: toAddress,
-        });
-    } catch (err) {
-        res.status(500).json({
-            success: false,
-            error: err.message,
-            stack: err.stack,
-            brevoApiKey: process.env.BREVO_API_KEY ? "Present" : "Missing",
-            fromEmail: process.env.BREVO_FROM_EMAIL || "Not set",
-        });
-    }
-});
 
 /**
  * @route GET /api/auth/get-me
