@@ -400,6 +400,8 @@ const resetPasswordController = asyncHandler(async (req, res) => {
  * @route GET /api/auth/google/callback
  * @description Google OAuth callback handler. Passport handles authentication,
  *              we sign JWT and redirect to frontend workspace.
+ *              Token is passed via URL query param because cross-domain cookies
+ *              are blocked by modern browsers during redirects.
  * @access Public (Callback from Google)
  */
 const googleAuthCallbackController = asyncHandler(async (req, res) => {
@@ -408,12 +410,19 @@ const googleAuthCallbackController = asyncHandler(async (req, res) => {
         return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
     }
 
-    // Issue JWT token and set cookie
-    signTokenAndSetCookie(req.user, res);
+    // Generate JWT token
+    const token = jwt.sign(
+        { id: req.user._id, username: req.user.username },
+        process.env.JWT_SECRET,
+        { expiresIn: "1d" }
+    );
 
-    // Redirect to frontend dashboard/workspace
+    // Also set the cookie (for same-domain or subsequent API calls)
+    res.cookie("token", token, getCookieOptions());
+
+    // Pass token in URL so the frontend can store it via a dedicated API call
     const frontendUrl = (process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app").replace(/\/$/, "");
-    return res.redirect(`${frontendUrl}/workspace`);
+    return res.redirect(`${frontendUrl}/workspace?token=${token}`);
 });
 
 
@@ -438,6 +447,37 @@ const contactController = asyncHandler(async (req, res) => {
 });
 
 
+/**
+ * @route POST /api/auth/set-token
+ * @description Receives a JWT token in the request body, validates it,
+ *              and sets it as an httpOnly cookie. Used by the frontend
+ *              after Google OAuth redirect (cross-domain cookies are blocked
+ *              by modern browsers, so token is passed via URL query param).
+ * @access Public
+ */
+const setTokenController = asyncHandler(async (req, res) => {
+    const { token } = req.body;
+
+    if (!token) {
+        throw new AppError("Token is required", 400);
+    }
+
+    // Verify the token is valid before setting it as a cookie
+    try {
+        jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+        throw new AppError("Invalid or expired token", 401);
+    }
+
+    res.cookie("token", token, getCookieOptions());
+
+    return res.status(200).json({
+        success: true,
+        message: "Token set successfully",
+    });
+});
+
+
 module.exports = {
     registerUserController,
     loginUserController,
@@ -448,5 +488,6 @@ module.exports = {
     forgotPasswordController,
     resetPasswordController,
     googleAuthCallbackController,
+    setTokenController,
     contactController,
 };

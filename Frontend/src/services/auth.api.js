@@ -115,6 +115,20 @@ export async function resetPassword({ token, password }) {
     }
 }
 
+export async function setToken(token) {
+    try {
+        const response = await axios.post(
+            `${API_BASE}/set-token`,
+            { token },
+            { withCredentials: true }
+        );
+        return response.data;
+    } catch (err) {
+        console.error("SetToken API error:", err);
+        throw err;
+    }
+}
+
 export function getGoogleAuthUrl() {
     return `${API_BASE}/google`;
 }

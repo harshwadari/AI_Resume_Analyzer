@@ -82,6 +82,13 @@ authRouter.get(
 )
 
 /**
+ * @route POST /api/auth/set-token
+ * @desc Set JWT token as httpOnly cookie (used after Google OAuth redirect)
+ * @access Public
+ */
+authRouter.post("/set-token", authController.setTokenController)
+
+/**
  * @route POST /api/auth/contact
  * @desc Submit contact form on landing page
  * @access Public
