@@ -1,40 +1,45 @@
 /**
- * Email Service — Handles all outgoing emails using Resend's HTTP API.
+ * Email Service — Handles all outgoing emails using Brevo's HTTP API.
  *
  * This resolves SMTP connection blocking issues on hosting providers like Render.
  * Required env vars:
- *   RESEND_API_KEY — The API key generated from Resend.com
- *   RESEND_FROM_EMAIL — Verified sender email (defaults to "PrepWise AI <onboarding@resend.dev>")
+ *   BREVO_API_KEY — The API key generated from Brevo.com (xkeysib-...)
+ *   BREVO_FROM_EMAIL — Verified sender email (defaults to "project.noreplies@gmail.com")
  */
 
-const RESEND_API_URL = "https://api.resend.com/emails";
+const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 
 /**
- * Generic helper to send email via Resend's API
+ * Generic helper to send email via Brevo's API
  */
 async function sendEmail({ to, subject, html, replyTo }) {
-    if (!process.env.RESEND_API_KEY) {
-        throw new Error("RESEND_API_KEY is not defined in the environment variables.");
+    if (!process.env.BREVO_API_KEY) {
+        throw new Error("BREVO_API_KEY is not defined in the environment variables.");
     }
 
-    const from = process.env.RESEND_FROM_EMAIL || "PrepWise AI <onboarding@resend.dev>";
+    const fromEmail = process.env.BREVO_FROM_EMAIL || "project.noreplies@gmail.com";
+    const fromName = process.env.BREVO_FROM_NAME || "PrepWise AI";
 
     const payload = {
-        from,
-        to: Array.isArray(to) ? to : [to],
+        sender: {
+            name: fromName,
+            email: fromEmail,
+        },
+        to: (Array.isArray(to) ? to : [to]).map(email => ({ email })),
         subject,
-        html,
+        htmlContent: html,
     };
 
     if (replyTo) {
-        payload.reply_to = replyTo;
+        payload.replyTo = { email: replyTo };
     }
 
-    const response = await fetch(RESEND_API_URL, {
+    const response = await fetch(BREVO_API_URL, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+            "api-key": process.env.BREVO_API_KEY,
+            "accept": "application/json",
         },
         body: JSON.stringify(payload),
     });
@@ -42,7 +47,7 @@ async function sendEmail({ to, subject, html, replyTo }) {
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(data.message || `Resend API failed with status ${response.status}`);
+        throw new Error(data.message || `Brevo API failed with status ${response.status}`);
     }
 
     return data;
@@ -166,7 +171,7 @@ async function sendContactEmail(senderName, senderEmail, message) {
         </div>
     `;
 
-    const toAddress = process.env.EMAIL_USER || "onboarding@resend.dev";
+    const toAddress = process.env.EMAIL_USER || "project.noreplies@gmail.com";
 
     await sendEmail({
         to: toAddress,

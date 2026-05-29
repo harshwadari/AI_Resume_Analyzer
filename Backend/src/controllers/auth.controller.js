@@ -46,8 +46,8 @@ const signTokenAndSetCookie = (user, res) => {
 const registerUserController = asyncHandler(async (req, res) => {
     const { username, email, password } = req.body;
 
-    if (!process.env.RESEND_API_KEY) {
-        throw new AppError("Backend email service is not configured. Please ensure RESEND_API_KEY is set in the backend configuration.", 500);
+    if (!process.env.BREVO_API_KEY) {
+        throw new AppError("Backend email service is not configured. Please ensure BREVO_API_KEY is set in the backend configuration.", 500);
     }
 
     if (!username || !email || !password) {
@@ -318,8 +318,8 @@ const getMeController = asyncHandler(async (req, res) => {
 const forgotPasswordController = asyncHandler(async (req, res) => {
     const { email } = req.body;
 
-    if (!process.env.RESEND_API_KEY) {
-        throw new AppError("Backend email service is not configured. Please ensure RESEND_API_KEY is set in the backend configuration.", 500);
+    if (!process.env.BREVO_API_KEY) {
+        throw new AppError("Backend email service is not configured. Please ensure BREVO_API_KEY is set in the backend configuration.", 500);
     }
 
     if (!email) {
