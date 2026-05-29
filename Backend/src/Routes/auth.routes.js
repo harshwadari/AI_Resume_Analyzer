@@ -90,42 +90,28 @@ authRouter.post("/set-token", authController.setTokenController)
 
 /**
  * @route GET /api/auth/test-email
- * @desc Test SMTP configuration on Render
+ * @desc Test Resend SMTP/HTTP configuration on Render
  * @access Public
  */
-const nodemailer = require("nodemailer");
+const { sendOtpEmail } = require("../services/email.service");
 authRouter.get("/test-email", async (req, res) => {
     try {
-        const transporter = nodemailer.createTransport({
-            service: "gmail",
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
-            },
-            connectionTimeout: 10000,
-            greetingTimeout: 10000,
-            socketTimeout: 10000,
-        });
-
-        const info = await transporter.sendMail({
-            from: `"Test" <${process.env.EMAIL_USER}>`,
-            to: process.env.EMAIL_USER,
-            subject: "Render Diagnostic Test Email",
-            text: "Hello from Render!",
-        });
+        const toAddress = req.query.to || process.env.EMAIL_USER || "onboarding@resend.dev";
+        await sendOtpEmail(toAddress, "123456");
 
         res.json({
             success: true,
-            message: "Email sent successfully",
-            info,
+            message: `OTP email triggered via Resend to ${toAddress}. Check your inbox/spam folder.`,
+            fromEmail: process.env.RESEND_FROM_EMAIL || "PrepWise AI <onboarding@resend.dev>",
+            to: toAddress,
         });
     } catch (err) {
         res.status(500).json({
             success: false,
             error: err.message,
             stack: err.stack,
-            envUser: process.env.EMAIL_USER ? "Present" : "Missing",
-            envPass: process.env.EMAIL_PASS ? "Present" : "Missing",
+            resendApiKey: process.env.RESEND_API_KEY ? "Present" : "Missing",
+            fromEmail: process.env.RESEND_FROM_EMAIL || "Not set",
         });
     }
 });
