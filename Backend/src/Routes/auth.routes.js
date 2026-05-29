@@ -88,29 +88,6 @@ authRouter.get(
  */
 authRouter.post("/set-token", authController.setTokenController)
 
-const { sendOtpEmail } = require("../services/email.service");
-authRouter.get("/test-email", async (req, res) => {
-    try {
-        const toAddress = req.query.to || process.env.EMAIL_USER || "onboarding@resend.dev";
-        await sendOtpEmail(toAddress, "123456");
-
-        res.json({
-            success: true,
-            message: `OTP email triggered via Resend to ${toAddress}. Check your inbox/spam folder.`,
-            fromEmail: process.env.RESEND_FROM_EMAIL || "PrepWise AI <onboarding@resend.dev>",
-            to: toAddress,
-        });
-    } catch (err) {
-        res.status(500).json({
-            success: false,
-            error: err.message,
-            stack: err.stack,
-            resendApiKey: process.env.RESEND_API_KEY ? "Present" : "Missing",
-            fromEmail: process.env.RESEND_FROM_EMAIL || "Not set",
-        });
-    }
-});
-
 authRouter.post("/contact", validate(contactSchema), authController.contactController)
 
 module.exports = authRouter
