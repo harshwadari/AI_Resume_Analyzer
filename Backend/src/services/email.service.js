@@ -1,37 +1,39 @@
-const { Resend } = require("resend");
+const nodemailer = require("nodemailer");
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-// Using Resend's free default sender — works without any domain verification.
-// Recipients can be any email address (Gmail, Yahoo, etc.)
-const FROM_ADDRESS = "onboarding@resend.dev";
+// ── Gmail SMTP Transporter ──────────────────────────────────────────────────
+// Uses Gmail App Password (not your regular password).
+// To set up: Google Account → Security → 2-Step Verification → App Passwords
+// Set EMAIL_USER and EMAIL_PASS in your .env file.
+const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+        user: process.env.EMAIL_USER, // your Gmail address e.g. you@gmail.com
+        pass: process.env.EMAIL_PASS, // 16-char App Password (not your Gmail password)
+    },
+});
 
 /**
- * Core send helper — wraps the Resend SDK and throws a clean error on failure.
+ * Core send helper — sends email via Gmail SMTP using Nodemailer.
+ * Works for any recipient email (Gmail, Yahoo, Hotmail, etc.) for free.
  */
 async function sendEmail({ to, subject, html, replyTo }) {
-    const payload = {
-        from: FROM_ADDRESS,
-        to: Array.isArray(to) ? to : [to],
+    const mailOptions = {
+        from: `"PrepWise AI" <${process.env.EMAIL_USER}>`,
+        to: Array.isArray(to) ? to.join(", ") : to,
         subject,
         html,
     };
 
     if (replyTo) {
-        payload.reply_to = replyTo;
+        mailOptions.replyTo = replyTo;
     }
 
-    console.log(`[Email] Sending "${subject}" to ${payload.to.join(", ")} from ${FROM_ADDRESS}`);
+    console.log(`[Email] Sending "${subject}" to ${mailOptions.to}`);
 
-    const { data, error } = await resend.emails.send(payload);
+    const info = await transporter.sendMail(mailOptions);
 
-    if (error) {
-        console.error("[Email] Resend API error:", JSON.stringify(error));
-        throw new Error(`Resend error: ${error.message || JSON.stringify(error)}`);
-    }
-
-    console.log(`[Email] Sent successfully. ID: ${data?.id}`);
-    return data;
+    console.log(`[Email] Sent successfully. MessageId: ${info.messageId}`);
+    return info;
 }
 
 // ── OTP Verification Email ──────────────────────────────────────────────────
@@ -116,10 +118,10 @@ async function sendGoogleAuthReminderEmail(to) {
 
 // ── Contact Form Email ──────────────────────────────────────────────────────
 async function sendContactEmail(senderName, senderEmail, message) {
-    const ownerEmail = process.env.RESEND_FROM_EMAIL || process.env.CONTACT_RECIPIENT_EMAIL;
+    const ownerEmail = process.env.EMAIL_USER;
 
     if (!ownerEmail) {
-        throw new Error("RESEND_FROM_EMAIL or CONTACT_RECIPIENT_EMAIL must be set to receive contact form emails.");
+        throw new Error("EMAIL_USER must be set to receive contact form emails.");
     }
 
     const html = `
