@@ -1,28 +1,52 @@
 const nodemailer = require("nodemailer");
 
-// ── Brevo (formerly Sendinblue) SMTP Transporter ───────────────────────────
-// Brevo works reliably from cloud servers (Render/AWS/GCP).
-// Gmail SMTP often blocks cloud server IPs, causing timeouts in production.
+// ── Auto-detecting Email Transporter ───────────────────────────────────────
+// Priority:
+//   1. Brevo SMTP  → if BREVO_SMTP_USER + BREVO_SMTP_PASS are set (best for production/Render)
+//   2. Gmail SMTP  → if EMAIL_USER + EMAIL_PASS are set (works locally)
 //
-// Setup: brevo.com → free account → SMTP & API → copy SMTP credentials
-// Set BREVO_SMTP_USER and BREVO_SMTP_PASS in your .env / Render env vars.
-const transporter = nodemailer.createTransport({
-    host: "smtp-relay.brevo.com",
-    port: 587,
-    secure: false, // TLS via STARTTLS
-    auth: {
-        user: process.env.BREVO_SMTP_USER, // your Brevo login email
-        pass: process.env.BREVO_SMTP_PASS, // Brevo SMTP key (from SMTP & API settings)
-    },
-});
+// Local .env:   set EMAIL_USER + EMAIL_PASS (Gmail App Password)
+// Render env:   set BREVO_SMTP_USER + BREVO_SMTP_PASS (Brevo SMTP key)
+
+function createTransporter() {
+    if (process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS) {
+        console.log("[Email] Using Brevo SMTP transporter");
+        return nodemailer.createTransport({
+            host: "smtp-relay.brevo.com",
+            port: 587,
+            secure: false,
+            auth: {
+                user: process.env.BREVO_SMTP_USER,
+                pass: process.env.BREVO_SMTP_PASS,
+            },
+        });
+    }
+
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        console.log("[Email] Using Gmail SMTP transporter");
+        return nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
+        });
+    }
+
+    throw new Error("No email credentials found. Set BREVO_SMTP_USER/BREVO_SMTP_PASS or EMAIL_USER/EMAIL_PASS in your environment.");
+}
+
+const transporter = createTransporter();
+
+// Sender address — use Brevo email or Gmail
+const FROM_EMAIL = process.env.BREVO_SMTP_USER || process.env.EMAIL_USER;
 
 /**
- * Core send helper — sends email via Brevo SMTP using Nodemailer.
- * Works for any recipient email (Gmail, Yahoo, Hotmail, etc.)
+ * Core send helper — sends email via the auto-detected transporter.
  */
 async function sendEmail({ to, subject, html, replyTo }) {
     const mailOptions = {
-        from: `"PrepWise AI" <${process.env.BREVO_SMTP_USER}>`,
+        from: `"PrepWise AI" <${FROM_EMAIL}>`,
         to: Array.isArray(to) ? to.join(", ") : to,
         subject,
         html,
@@ -38,6 +62,7 @@ async function sendEmail({ to, subject, html, replyTo }) {
 
     console.log(`[Email] Sent successfully. MessageId: ${info.messageId}`);
     return info;
+}
 }
 
 // ── OTP Verification Email ──────────────────────────────────────────────────

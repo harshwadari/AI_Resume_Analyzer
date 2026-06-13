@@ -45,7 +45,9 @@ const createAndSendVerificationOtp = async (user) => {
 };
 
 const isEmailServiceConfigured = () => {
-    return Boolean(process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS);
+    const hasBrevo = Boolean(process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS);
+    const hasGmail = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+    return hasBrevo || hasGmail;
 };
 
 
