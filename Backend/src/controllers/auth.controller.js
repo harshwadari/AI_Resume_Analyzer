@@ -1,6 +1,5 @@
 const userModel = require("../models/user.model");
 const jwt = require("jsonwebtoken");
-const bcrypt = require("bcrypt");
 const tokenBlackListModel = require("../models/blacklist.model");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../utils/AppError");
@@ -46,7 +45,7 @@ const createAndSendVerificationOtp = async (user) => {
 };
 
 const isEmailServiceConfigured = () => {
-    return Boolean(process.env.BREVO_API_KEY || (process.env.EMAIL_USER && process.env.EMAIL_PASS));
+    return Boolean(process.env.RESEND_API_KEY);
 };
 
 
@@ -60,7 +59,7 @@ const registerUserController = asyncHandler(async (req, res) => {
     const { username, email, password } = req.body;
 
     if (!isEmailServiceConfigured()) {
-        throw new AppError("Backend email service is not configured. Please configure BREVO_API_KEY or EMAIL_USER and EMAIL_PASS.", 500);
+        throw new AppError("Backend email service is not configured. Please set RESEND_API_KEY in the server environment.", 500);
     }
 
     if (!username || !email || !password) {
@@ -350,7 +349,7 @@ const forgotPasswordController = asyncHandler(async (req, res) => {
     const { email } = req.body;
 
     if (!isEmailServiceConfigured()) {
-        throw new AppError("Backend email service is not configured. Please configure BREVO_API_KEY or EMAIL_USER and EMAIL_PASS.", 500);
+        throw new AppError("Backend email service is not configured. Please set RESEND_API_KEY in the server environment.", 500);
     }
 
     if (!email) {

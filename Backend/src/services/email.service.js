@@ -1,89 +1,43 @@
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
-const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
-const emailPassword = (process.env.EMAIL_PASS || "").replace(/\s/g, "");
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const smtpTransporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    requireTLS: true,
-    family: 4,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: emailPassword,
-    },
-    tls: {
-        servername: "smtp.gmail.com",
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-});
+// IMPORTANT: The "from" address must be a verified domain in your Resend account.
+// If you have a custom domain verified in Resend, set RESEND_FROM_EMAIL to something like:
+//   "PrepWise AI <noreply@yourdomain.com>"
+// Otherwise, Resend's sandbox address (onboarding@resend.dev) is used — this can only
+// send to emails you have verified in your Resend account dashboard.
+const FROM_ADDRESS = process.env.RESEND_FROM_EMAIL || "PrepWise AI <onboarding@resend.dev>";
 
-async function sendWithBrevo({ to, subject, html, replyTo }) {
-    const fromEmail = process.env.BREVO_FROM_EMAIL || process.env.EMAIL_USER;
-    const fromName = process.env.BREVO_FROM_NAME || "PrepWise AI";
-
-    if (!fromEmail) {
-        throw new Error("BREVO_FROM_EMAIL or EMAIL_USER must be configured.");
-    }
-
+/**
+ * Core send helper — wraps the Resend SDK and throws a clean error on failure.
+ */
+async function sendEmail({ to, subject, html, replyTo }) {
     const payload = {
-        sender: {
-            name: fromName,
-            email: fromEmail,
-        },
-        to: (Array.isArray(to) ? to : [to]).map((email) => ({ email })),
+        from: FROM_ADDRESS,
+        to: Array.isArray(to) ? to : [to],
         subject,
-        htmlContent: html,
+        html,
     };
 
     if (replyTo) {
-        payload.replyTo = { email: replyTo };
+        payload.reply_to = replyTo;
     }
 
-    const response = await fetch(BREVO_API_URL, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "api-key": process.env.BREVO_API_KEY,
-            accept: "application/json",
-        },
-        body: JSON.stringify(payload),
-    });
+    console.log(`[Email] Sending "${subject}" to ${payload.to.join(", ")} from ${FROM_ADDRESS}`);
 
-    const data = await response.json().catch(() => ({}));
+    const { data, error } = await resend.emails.send(payload);
 
-    if (!response.ok) {
-        throw new Error(data.message || `Brevo API failed with status ${response.status}`);
+    if (error) {
+        console.error("[Email] Resend API error:", JSON.stringify(error));
+        throw new Error(`Resend error: ${error.message || JSON.stringify(error)}`);
     }
 
+    console.log(`[Email] Sent successfully. ID: ${data?.id}`);
     return data;
 }
 
-async function sendWithSmtp({ to, subject, html, replyTo, fromName = "PrepWise AI" }) {
-    if (!process.env.EMAIL_USER || !emailPassword) {
-        throw new Error("EMAIL_USER and EMAIL_PASS must be configured for SMTP email.");
-    }
-
-    await smtpTransporter.sendMail({
-        from: `"${fromName}" <${process.env.EMAIL_USER}>`,
-        to,
-        replyTo,
-        subject,
-        html,
-    });
-}
-
-async function sendEmail(options) {
-    if (process.env.BREVO_API_KEY) {
-        return sendWithBrevo(options);
-    }
-
-    return sendWithSmtp(options);
-}
-
+// ── OTP Verification Email ──────────────────────────────────────────────────
 async function sendOtpEmail(to, otp) {
     const html = `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #fafafa; border-radius: 16px;">
@@ -107,6 +61,7 @@ async function sendOtpEmail(to, otp) {
     });
 }
 
+// ── Password Reset Email ────────────────────────────────────────────────────
 async function sendResetPasswordEmail(to, resetUrl) {
     const html = `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #fafafa; border-radius: 16px;">
@@ -132,6 +87,7 @@ async function sendResetPasswordEmail(to, resetUrl) {
     });
 }
 
+// ── Google Auth Reminder Email ──────────────────────────────────────────────
 async function sendGoogleAuthReminderEmail(to) {
     const loginUrl = `${process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app"}/login`;
     const html = `
@@ -161,7 +117,14 @@ async function sendGoogleAuthReminderEmail(to) {
     });
 }
 
+// ── Contact Form Email ──────────────────────────────────────────────────────
 async function sendContactEmail(senderName, senderEmail, message) {
+    const ownerEmail = process.env.RESEND_FROM_EMAIL || process.env.CONTACT_RECIPIENT_EMAIL;
+
+    if (!ownerEmail) {
+        throw new Error("RESEND_FROM_EMAIL or CONTACT_RECIPIENT_EMAIL must be set to receive contact form emails.");
+    }
+
     const html = `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px; background: #fafafa; border-radius: 16px; border: 1px solid #e2e8f0;">
             <h2 style="color: #1e293b; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Contact Form Submission</h2>
@@ -178,11 +141,10 @@ async function sendContactEmail(senderName, senderEmail, message) {
     `;
 
     await sendEmail({
-        to: process.env.EMAIL_USER || process.env.BREVO_FROM_EMAIL,
+        to: ownerEmail,
         replyTo: senderEmail,
         subject: `New Contact Message from ${senderName}`,
         html,
-        fromName: "PrepWise Contact Form",
     });
 }
 
