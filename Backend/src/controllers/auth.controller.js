@@ -45,9 +45,7 @@ const createAndSendVerificationOtp = async (user) => {
 };
 
 const isEmailServiceConfigured = () => {
-    const hasBrevo = Boolean(process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS);
-    const hasGmail = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
-    return hasBrevo || hasGmail;
+    return Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 };
 
 
@@ -61,7 +59,7 @@ const registerUserController = asyncHandler(async (req, res) => {
     const { username, email, password } = req.body;
 
     if (!isEmailServiceConfigured()) {
-        throw new AppError("Backend email service is not configured. Please set RESEND_API_KEY in the server environment.", 500);
+        throw new AppError("Backend email service is not configured. Please set EMAIL_USER and EMAIL_PASS.", 500);
     }
 
     if (!username || !email || !password) {
@@ -351,7 +349,7 @@ const forgotPasswordController = asyncHandler(async (req, res) => {
     const { email } = req.body;
 
     if (!isEmailServiceConfigured()) {
-        throw new AppError("Backend email service is not configured. Please set RESEND_API_KEY in the server environment.", 500);
+        throw new AppError("Backend email service is not configured. Please set EMAIL_USER and EMAIL_PASS.", 500);
     }
 
     if (!email) {
@@ -368,9 +366,9 @@ const forgotPasswordController = asyncHandler(async (req, res) => {
         });
     }
 
-    // Send a helpful sign-in reminder email to Google OAuth users (Google accounts have no local password)
+    // Send a helpful sign-in reminder email to Google OAuth users (fire-and-forget)
     if (user.authProvider === "google") {
-        await sendGoogleAuthReminderEmail(email);
+        sendGoogleAuthReminderEmail(email).catch(err => console.error("Failed to send Google auth reminder:", err));
         return res.status(200).json({
             success: true,
             message: "If an account exists with this email, a reset link has been sent.",
@@ -386,12 +384,10 @@ const forgotPasswordController = asyncHandler(async (req, res) => {
 
     // Build the reset URL pointing to the frontend page
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${rawToken}`;
-    try {
-        await sendResetPasswordEmail(email, resetUrl);
-    } catch (emailError) {
-        console.error("Failed to send reset password email:", emailError);
-        throw new AppError("Failed to send password reset email. Please try again later.", 500);
-    }
+
+    // Send email in background (fire-and-forget) — respond to user immediately.
+    // This prevents timeout on slow cloud servers (Render cold start + Gmail SMTP).
+    sendResetPasswordEmail(email, resetUrl).catch(err => console.error("Failed to send reset password email:", err));
 
     return res.status(200).json({
         success: true,

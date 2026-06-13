@@ -1,52 +1,22 @@
 const nodemailer = require("nodemailer");
 
-// ── Auto-detecting Email Transporter ───────────────────────────────────────
-// Priority:
-//   1. Brevo SMTP  → if BREVO_SMTP_USER + BREVO_SMTP_PASS are set (production/Render)
-//   2. Gmail SMTP  → if EMAIL_USER + EMAIL_PASS are set (local dev)
-//
-// Local .env:   set EMAIL_USER + EMAIL_PASS (Gmail App Password)
-// Render env:   set BREVO_SMTP_USER + BREVO_SMTP_PASS (Brevo SMTP key)
-
-function createTransporter() {
-    if (process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS) {
-        console.log("[Email] Using Brevo SMTP transporter");
-        return nodemailer.createTransport({
-            host: "smtp-relay.brevo.com",
-            port: 587,
-            secure: false,
-            auth: {
-                user: process.env.BREVO_SMTP_USER,
-                pass: process.env.BREVO_SMTP_PASS,
-            },
-        });
-    }
-
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-        console.log("[Email] Using Gmail SMTP transporter");
-        return nodemailer.createTransport({
-            service: "gmail",
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
-            },
-        });
-    }
-
-    throw new Error("No email credentials found. Set BREVO_SMTP_USER/BREVO_SMTP_PASS or EMAIL_USER/EMAIL_PASS.");
-}
-
-const transporter = createTransporter();
-
-// Sender address — Brevo email or Gmail
-const FROM_EMAIL = process.env.BREVO_SMTP_USER || process.env.EMAIL_USER;
+// ── Gmail SMTP Transporter ──────────────────────────────────────────────────
+// Uses Gmail App Password (not your regular password).
+// Setup: Google Account → Security → 2-Step Verification → App Passwords
+const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+    },
+});
 
 /**
- * Core send helper — sends email via the auto-detected transporter.
+ * Core send helper — sends email via Gmail SMTP.
  */
 async function sendEmail({ to, subject, html, replyTo }) {
     const mailOptions = {
-        from: `"PrepWise AI" <${FROM_EMAIL}>`,
+        from: `"PrepWise AI" <${process.env.EMAIL_USER}>`,
         to: Array.isArray(to) ? to.join(", ") : to,
         subject,
         html,
@@ -146,10 +116,10 @@ async function sendGoogleAuthReminderEmail(to) {
 
 // ── Contact Form Email ──────────────────────────────────────────────────────
 async function sendContactEmail(senderName, senderEmail, message) {
-    const ownerEmail = FROM_EMAIL;
+    const ownerEmail = process.env.EMAIL_USER;
 
     if (!ownerEmail) {
-        throw new Error("No sender email configured. Set EMAIL_USER or BREVO_SMTP_USER.");
+        throw new Error("EMAIL_USER must be set to receive contact form emails.");
     }
 
     const html = `
