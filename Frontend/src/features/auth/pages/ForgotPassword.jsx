@@ -118,13 +118,19 @@ const ForgotPassword = () => {
                     </div>
                   )}
 
+                  {loading && (
+                    <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                      This may take up to a minute — please wait…
+                    </p>
+                  )}
+
                   <button
                     type="submit"
                     disabled={loading}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-3.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-75"
                   >
                     {loading && <LoadingSpinner size="sm" className="border-white/20 border-t-white" />}
-                    <span>{loading ? "Sending..." : "Send Reset Link"}</span>
+                    <span>{loading ? "Sending reset link..." : "Send Reset Link"}</span>
                     {!loading && <ArrowRight size={16} />}
                   </button>
                 </form>

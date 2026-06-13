@@ -3,9 +3,10 @@ import axios from "axios";
 const VITE_API_URL = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
 const API_BASE = `${VITE_API_URL}/api/auth`;
 
-// Create axios instance with timeout to prevent infinite hangs
+// Create axios instance with timeout to prevent infinite hangs.
+// 120s accounts for Render free tier cold start (up to 60s) + email sending time.
 const api = axios.create({
-    timeout: 60000, // 60 seconds — enough for slow email sending on Render free tier
+    timeout: 120000, // 120 seconds
     withCredentials: true,
 });
 
@@ -113,9 +114,11 @@ export async function resendOtp({ email }) {
 
 export async function forgotPassword({ email }) {
     try {
+        // Extra timeout for forgot-password: Render cold start + Gmail SMTP can be slow
         const response = await api.post(
             `${API_BASE}/forgot-password`,
-            { email }
+            { email },
+            { timeout: 120000 }
         );
         return response.data;
     } catch (err) {

@@ -37,6 +37,11 @@ app.use(cors({
 app.use("/api/auth", authRouter);
 app.use("/api/interview", interviewRouter);
 
+// ── Health check — ping this every 14 min via cron-job.org to keep Render warm ──
+app.get("/health", (req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 //  Global error handler — must be after all routes
 app.use((err, req, res, next) => {
     // Handle Multer-specific errors (file upload issues)

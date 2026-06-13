@@ -1,24 +1,28 @@
 const nodemailer = require("nodemailer");
 
-// ── Gmail SMTP Transporter ──────────────────────────────────────────────────
-// Uses Gmail App Password (not your regular password).
-// To set up: Google Account → Security → 2-Step Verification → App Passwords
-// Set EMAIL_USER and EMAIL_PASS in your .env file.
+// ── Brevo (formerly Sendinblue) SMTP Transporter ───────────────────────────
+// Brevo works reliably from cloud servers (Render/AWS/GCP).
+// Gmail SMTP often blocks cloud server IPs, causing timeouts in production.
+//
+// Setup: brevo.com → free account → SMTP & API → copy SMTP credentials
+// Set BREVO_SMTP_USER and BREVO_SMTP_PASS in your .env / Render env vars.
 const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp-relay.brevo.com",
+    port: 587,
+    secure: false, // TLS via STARTTLS
     auth: {
-        user: process.env.EMAIL_USER, // your Gmail address e.g. you@gmail.com
-        pass: process.env.EMAIL_PASS, // 16-char App Password (not your Gmail password)
+        user: process.env.BREVO_SMTP_USER, // your Brevo login email
+        pass: process.env.BREVO_SMTP_PASS, // Brevo SMTP key (from SMTP & API settings)
     },
 });
 
 /**
- * Core send helper — sends email via Gmail SMTP using Nodemailer.
- * Works for any recipient email (Gmail, Yahoo, Hotmail, etc.) for free.
+ * Core send helper — sends email via Brevo SMTP using Nodemailer.
+ * Works for any recipient email (Gmail, Yahoo, Hotmail, etc.)
  */
 async function sendEmail({ to, subject, html, replyTo }) {
     const mailOptions = {
-        from: `"PrepWise AI" <${process.env.EMAIL_USER}>`,
+        from: `"PrepWise AI" <${process.env.BREVO_SMTP_USER}>`,
         to: Array.isArray(to) ? to.join(", ") : to,
         subject,
         html,

@@ -45,7 +45,7 @@ const createAndSendVerificationOtp = async (user) => {
 };
 
 const isEmailServiceConfigured = () => {
-    return Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+    return Boolean(process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS);
 };
 
 
