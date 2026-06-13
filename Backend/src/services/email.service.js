@@ -2,8 +2,8 @@ const nodemailer = require("nodemailer");
 
 // ── Auto-detecting Email Transporter ───────────────────────────────────────
 // Priority:
-//   1. Brevo SMTP  → if BREVO_SMTP_USER + BREVO_SMTP_PASS are set (best for production/Render)
-//   2. Gmail SMTP  → if EMAIL_USER + EMAIL_PASS are set (works locally)
+//   1. Brevo SMTP  → if BREVO_SMTP_USER + BREVO_SMTP_PASS are set (production/Render)
+//   2. Gmail SMTP  → if EMAIL_USER + EMAIL_PASS are set (local dev)
 //
 // Local .env:   set EMAIL_USER + EMAIL_PASS (Gmail App Password)
 // Render env:   set BREVO_SMTP_USER + BREVO_SMTP_PASS (Brevo SMTP key)
@@ -33,12 +33,12 @@ function createTransporter() {
         });
     }
 
-    throw new Error("No email credentials found. Set BREVO_SMTP_USER/BREVO_SMTP_PASS or EMAIL_USER/EMAIL_PASS in your environment.");
+    throw new Error("No email credentials found. Set BREVO_SMTP_USER/BREVO_SMTP_PASS or EMAIL_USER/EMAIL_PASS.");
 }
 
 const transporter = createTransporter();
 
-// Sender address — use Brevo email or Gmail
+// Sender address — Brevo email or Gmail
 const FROM_EMAIL = process.env.BREVO_SMTP_USER || process.env.EMAIL_USER;
 
 /**
@@ -62,7 +62,6 @@ async function sendEmail({ to, subject, html, replyTo }) {
 
     console.log(`[Email] Sent successfully. MessageId: ${info.messageId}`);
     return info;
-}
 }
 
 // ── OTP Verification Email ──────────────────────────────────────────────────
@@ -147,10 +146,10 @@ async function sendGoogleAuthReminderEmail(to) {
 
 // ── Contact Form Email ──────────────────────────────────────────────────────
 async function sendContactEmail(senderName, senderEmail, message) {
-    const ownerEmail = process.env.EMAIL_USER;
+    const ownerEmail = FROM_EMAIL;
 
     if (!ownerEmail) {
-        throw new Error("EMAIL_USER must be set to receive contact form emails.");
+        throw new Error("No sender email configured. Set EMAIL_USER or BREVO_SMTP_USER.");
     }
 
     const html = `
