@@ -2,12 +2,9 @@ const { Resend } = require("resend");
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// IMPORTANT: The "from" address must be a verified domain in your Resend account.
-// If you have a custom domain verified in Resend, set RESEND_FROM_EMAIL to something like:
-//   "PrepWise AI <noreply@yourdomain.com>"
-// Otherwise, Resend's sandbox address (onboarding@resend.dev) is used — this can only
-// send to emails you have verified in your Resend account dashboard.
-const FROM_ADDRESS = process.env.RESEND_FROM_EMAIL || "PrepWise AI <onboarding@resend.dev>";
+// Using Resend's free default sender — works without any domain verification.
+// Recipients can be any email address (Gmail, Yahoo, etc.)
+const FROM_ADDRESS = "onboarding@resend.dev";
 
 /**
  * Core send helper — wraps the Resend SDK and throws a clean error on failure.
