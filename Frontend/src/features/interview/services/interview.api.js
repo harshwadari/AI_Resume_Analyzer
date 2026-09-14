@@ -1,25 +1,6 @@
-import axios from "axios";
+import { createApiClient } from '../../../services/http';
 
-const rawBaseURL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-const api = axios.create({
-    baseURL: rawBaseURL.replace(/\/$/, ""),
-    withCredentials: true,
-});
-
-// Interceptor to attach Authorization header if token exists in localStorage
-api.interceptors.request.use(
-    (config) => {
-        const token = localStorage.getItem("token");
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
-    (error) => {
-        return Promise.reject(error);
-    }
-);
-
+const api = createApiClient();
 
 export const getInterviewReport = async ({ jobDescription, selfDescription, resumeFile }) => {
     const formData = new FormData();

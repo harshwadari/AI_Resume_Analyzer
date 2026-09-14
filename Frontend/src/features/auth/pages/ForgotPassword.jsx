@@ -87,7 +87,7 @@ const ForgotPassword = () => {
                   <div className="rounded-2xl border border-emerald-300/60 bg-emerald-50 px-6 py-5 dark:border-emerald-500/20 dark:bg-emerald-500/10">
                     <h3 className="text-base font-semibold text-emerald-700 dark:text-emerald-200">Check your email</h3>
                     <p className="mt-2 text-sm leading-7 text-emerald-600 dark:text-emerald-300">
-                      If an account exists with <strong>{email}</strong>, we've sent a password reset link. Please check your inbox and spam folder.
+                      If <strong>{email}</strong> is eligible, recovery instructions will be sent. Check your inbox and spam folder. If you only use Google, choose Google on the login page.
                     </p>
                   </div>
                   <Link

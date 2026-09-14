@@ -1,288 +1,93 @@
+const bcrypt = require('bcrypt');
+const dummyPasswordHash = bcrypt.hash(require('crypto').randomBytes(32).toString('hex'), 10);
 const userModel = require("../models/user.model");
 const jwt = require("jsonwebtoken");
-const tokenBlackListModel = require("../models/blacklist.model");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../utils/AppError");
-const { generateOtp, generateResetToken, hashToken } = require("../utils/otp.utils");
-const { sendOtpEmail, sendResetPasswordEmail, sendGoogleAuthReminderEmail, sendContactEmail } = require("../services/email.service");
+const { generateResetToken, hashToken } = require("../utils/otp.utils");
+const { sendResetPasswordEmail, sendGoogleAuthReminderEmail, sendContactEmail } = require("../services/email.service");
 
-
-// ── Helper: Cookie options for JWT tokens ──
-// httpOnly prevents JavaScript access (XSS protection)
-// secure ensures cookies are sent over HTTPS only in production
-// sameSite prevents CSRF attacks
-const getCookieOptions = () => {
-    const isProduction = process.env.NODE_ENV === "production";
-
-    return {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-        maxAge: 24 * 60 * 60 * 1000, // 1 day
-    };
-};
-
+const { cookieOptions: getCookieOptions, authConfig } = require('../config/auth.config');
 
 // ── Helper: Generate JWT and set it as an httpOnly cookie ──
-const signTokenAndSetCookie = (user, res) => {
+const signTokenAndSetCookie = (user, res, authMethod = "password") => {
     const token = jwt.sign(
-        { id: user._id, username: user.username },
+        { id: String(user._id), tokenVersion: user.tokenVersion || 0, authMethod, authTime: Math.floor(Date.now() / 1000) },
         process.env.JWT_SECRET,
-        { expiresIn: "1d" }
+        { expiresIn: "1d", algorithm: 'HS256', jwtid: require('crypto').randomUUID(), issuer: 'prepwise', audience: 'prepwise-web' }
     );
 
     res.cookie("token", token, getCookieOptions());
-    return token;
+
 };
 
-const createAndSendVerificationOtp = async (user) => {
-    const otp = generateOtp();
-    user.otp = otp;
-    user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
-    await user.save();
-
-    await sendOtpEmail(user.email, otp);
-};
+const { issueOtp: createAndSendVerificationOtp, consumeOtp } = require('../services/verification.service');
 
 const isEmailServiceConfigured = () => {
     return Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 };
 
-
-/**
- * @route POST /api/auth/register
- * @description Register a new user and send OTP to their email.
- *              User must verify OTP before they can login.
- * @access Public
- */
 const registerUserController = asyncHandler(async (req, res) => {
     const { username, email, password } = req.body;
-
-    if (!isEmailServiceConfigured()) {
-        throw new AppError("Backend email service is not configured. Please set EMAIL_USER and EMAIL_PASS.", 500);
-    }
-
-    if (!username || !email || !password) {
-        throw new AppError("Please provide username, email and password", 400);
-    }
-
-    const existingEmailUser = await userModel.findOne({ email });
-    const existingUsernameUser = await userModel.findOne({ username });
-
-    if (existingUsernameUser && (!existingEmailUser || !existingUsernameUser._id.equals(existingEmailUser._id))) {
-        throw new AppError("Account already exists with this username", 400);
-    }
-
-    if (existingEmailUser) {
-        const canRefreshUnverifiedSignup = !existingEmailUser.isVerified
-            && existingEmailUser.authProvider === "local";
-
-        if (!canRefreshUnverifiedSignup) {
-            throw new AppError("Account already exists with this email", 400);
-        }
-
-        existingEmailUser.username = username;
-        existingEmailUser.password = password;
-
-        try {
-            await createAndSendVerificationOtp(existingEmailUser);
-        } catch (emailError) {
-            console.error("Failed to send verification email on registration retry:", emailError);
-            throw new AppError("Failed to send verification email. Please check your email address or try again.", 500);
-        }
-
-        return res.status(200).json({
-            success: true,
-            message: "A new OTP has been sent to your email. Please verify to continue.",
-            requiresVerification: true,
-            email: existingEmailUser.email,
-            user: {
-                id: existingEmailUser._id,
-                username: existingEmailUser.username,
-                email: existingEmailUser.email,
-            }
-        });
-    }
-
-    // Create user (password hashed automatically by pre-save hook)
-    const user = await userModel.create({
-        username,
-        email,
-        password,
-    });
-
+    const duplicateMessage = "A user with this username or email already exists. Please sign in or recover your password.";
+    const existing = await userModel.findOne({ $or: [{ email }, { username }] }).select('_id');
+    if (existing) throw new AppError(duplicateMessage, 409);
+    if (!isEmailServiceConfigured()) throw new AppError("Email service is temporarily unavailable", 503);
+    let user;
     try {
-        await createAndSendVerificationOtp(user);
-    } catch (emailError) {
-        // If sending email fails, delete the created user so they can try again,
-        // and throw a clean error.
-        await userModel.findByIdAndDelete(user._id);
-        console.error("Failed to send verification email on registration:", emailError);
-        throw new AppError("Failed to send verification email. Please check your email address or try again.", 500);
+        user = await userModel.create({ username, email, password });
+    } catch (err) {
+        // Unique indexes also protect concurrent registrations after the lookup.
+        if (err.code === 11000) throw new AppError(duplicateMessage, 409);
+        throw err;
     }
-
-    return res.status(201).json({
+    await createAndSendVerificationOtp(user);
+    return res.status(200).json({
         success: true,
-        message: "Registration successful. OTP sent to your email. Please verify to continue.",
         requiresVerification: true,
-        email: user.email,
-        user: {
-            id: user._id,
-            username: user.username,
-            email: user.email,
-        }
+        email,
+        message: "If verification is needed, a code will be sent. Otherwise, sign in or recover your password.",
     });
 });
 
-
-/**
- * @route POST /api/auth/verify-otp
- * @description Verify the OTP sent to user's email during registration.
- *              On success, marks user as verified and issues JWT.
- * @access Public
- */
 const verifyOtpController = asyncHandler(async (req, res) => {
-    const { email, otp } = req.body;
-
-    if (!email || !otp) {
-        throw new AppError("Please provide email and OTP", 400);
-    }
-
-    const user = await userModel.findOne({ email });
-
-    if (!user) {
-        throw new AppError("No account found with this email", 404);
-    }
-
-    if (user.isVerified) {
-        throw new AppError("Email is already verified. Please login.", 400);
-    }
-
-    // Check if OTP matches
-    if (user.otp !== otp) {
-        throw new AppError("Invalid OTP. Please try again.", 400);
-    }
-
-    // Check if OTP has expired (5-minute window)
-    if (user.otpExpiry < new Date()) {
-        throw new AppError("OTP has expired. Please request a new one.", 400);
-    }
-
-    // Mark user as verified and clear OTP fields
-    user.isVerified = true;
-    user.otp = null;
-    user.otpExpiry = null;
-    await user.save();
-
-    // Issue JWT token and set cookie
-    const token = signTokenAndSetCookie(user, res);
-
-    return res.status(200).json({
-        success: true,
-        message: "Email verified successfully",
-        token,
-        user: {
-            id: user._id,
-            username: user.username,
-            email: user.email,
-        }
-    });
+    const user = await consumeOtp(req.body.email, req.body.otp);
+    if (!user) throw new AppError("Invalid or expired code. Request a new code if needed.", 400);
+    signTokenAndSetCookie(user, res, "otp");
+    return res.status(200).json({ success: true, message: "Email verified successfully", user: { id: user._id, username: user.username, email: user.email } });
 });
 
-
-/**
- * @route POST /api/auth/resend-otp
- * @description Resend a new OTP to the user's email.
- *              Generates a fresh OTP with a new 5-minute expiry.
- * @access Public
- */
 const resendOtpController = asyncHandler(async (req, res) => {
-    const { email } = req.body;
-
-    if (!email) {
-        throw new AppError("Please provide email", 400);
-    }
-
-    const user = await userModel.findOne({ email });
-
-    if (!user) {
-        throw new AppError("No account found with this email", 404);
-    }
-
-    if (user.isVerified) {
-        throw new AppError("Email is already verified. Please login.", 400);
-    }
-
-    // Generate new OTP and reset expiry
-    const otp = generateOtp();
-    user.otp = otp;
-    user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
-    await user.save();
-
-    try {
-        await sendOtpEmail(email, otp);
-    } catch (emailError) {
-        console.error("Failed to resend OTP email:", emailError);
-        throw new AppError("Failed to resend verification email. Please try again later.", 500);
-    }
-
-    return res.status(200).json({
-        success: true,
-        message: "New OTP sent to your email",
-    });
+    const user = await userModel.findOne({ email: req.body.email });
+    if (user && !user.isVerified && user.password) await createAndSendVerificationOtp(user);
+    return res.status(200).json({ success: true, message: "If verification is needed and the cooldown has passed, a code will be sent." });
 });
 
-
-/**
- * @route POST /api/auth/login
- * @description Login a user with email and password.
- *              Blocks login if email is not verified.
- * @access Public
- */
 const loginUserController = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
 
     const user = await userModel.findOne({ email });
 
-    if (!user) {
-        throw new AppError("Invalid email or password", 400);
-    }
-
-    // Block Google OAuth users from logging in with password
-    if (user.authProvider === "google") {
-        throw new AppError("This account uses Google login. Please sign in with Google.", 400);
-    }
-
-    // Use the instance method defined on the model
-    const isPasswordValid = await user.comparePassword(password);
-
-    if (!isPasswordValid) {
-        throw new AppError("Invalid email or password", 400);
-    }
+    const isPasswordValid = await bcrypt.compare(password, user?.password || await dummyPasswordHash);
+    if (!user?.password || !isPasswordValid) throw new AppError("Invalid email or password", 400);
 
     // Block login if email is not verified
     if (!user.isVerified) {
-        try {
-            await createAndSendVerificationOtp(user);
-        } catch (emailError) {
-            console.error("Failed to send verification email on login:", emailError);
-            throw new AppError("Email not verified. We attempted to send a new OTP, but the email service failed. Please try again later.", 500);
-        }
+        await createAndSendVerificationOtp(user);
 
         return res.status(403).json({
             success: false,
-            message: "Email not verified. A new OTP has been sent to your email.",
+            message: "Email verification is required. Enter your code or request a new one.",
             requiresVerification: true,
             email: user.email,
         });
     }
 
-    const token = signTokenAndSetCookie(user, res);
+    signTokenAndSetCookie(user, res);
 
     return res.status(200).json({
         success: true,
         message: "User logged in successfully",
-        token,
         user: {
             id: user._id,
             username: user.username,
@@ -291,37 +96,28 @@ const loginUserController = asyncHandler(async (req, res) => {
     });
 });
 
-
-/**
- * @route GET /api/auth/logout
- * @description Logout a user by blacklisting their JWT token.
- * @access Public
- */
 const logoutUserController = asyncHandler(async (req, res) => {
-    const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
-
-    if (token) {
-        await tokenBlackListModel.create({ token });
+    let decoded;
+    try {
+        decoded = jwt.verify(req.cookies?.token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'prepwise', audience: 'prepwise-web' });
+    } catch {
+        // Missing/expired/malformed cookies are already unauthenticated.
     }
-
-    res.clearCookie("token", getCookieOptions());
-
-    return res.status(200).json({
-        success: true,
-        message: "User logged out successfully"
-    });
+    try {
+        if (decoded && require('mongoose').isValidObjectId(decoded.id) && Number.isInteger(decoded.tokenVersion)) {
+            const versionFilter = decoded.tokenVersion === 0 ? { $or: [{ tokenVersion: 0 }, { tokenVersion: { $exists: false } }] } : { tokenVersion: decoded.tokenVersion };
+            await userModel.updateOne({ _id: decoded.id, ...versionFilter }, { $inc: { tokenVersion: 1 } });
+        }
+    } catch {
+        throw new AppError('Browser signed out, but session revocation could not be confirmed. Please try again when the service is available.', 503);
+    } finally {
+        require('../config/auth.config').clearAuthCookie(res);
+    }
+    return res.status(200).json({ success: true, message: 'Signed out of all sessions' });
 });
 
-
-/**
- * @route GET /api/auth/get-me
- * @description Get the details of the currently logged-in user.
- *              Password and sensitive fields are excluded.
- * @access Private (requires authUser middleware)
- */
 const getMeController = asyncHandler(async (req, res) => {
-    // .select("-password") excludes the password hash from the response
-    const user = await userModel.findById(req.user.id).select("-password -otp -otpExpiry -resetPasswordToken -resetPasswordExpiry");
+    const user = await userModel.findById(req.user.id).select("_id username email");
 
     if (!user) {
         throw new AppError("User not found", 404);
@@ -338,137 +134,56 @@ const getMeController = asyncHandler(async (req, res) => {
     });
 });
 
-
-/**
- * @route POST /api/auth/forgot-password
- * @description Send a password reset link to the user's email.
- *              Always returns success to prevent email enumeration attacks.
- * @access Public
- */
 const forgotPasswordController = asyncHandler(async (req, res) => {
     const { email } = req.body;
-
-    if (!isEmailServiceConfigured()) {
-        throw new AppError("Backend email service is not configured. Please set EMAIL_USER and EMAIL_PASS.", 500);
-    }
-
-    if (!email) {
-        throw new AppError("Please provide email", 400);
-    }
-
+    if (!isEmailServiceConfigured()) throw new AppError("Email service is temporarily unavailable", 503);
+    const reply = () => res.status(200).json({ success: true, message: "If the account is eligible, recovery instructions will be sent. Google-only accounts should sign in with Google." });
     const user = await userModel.findOne({ email });
-
-    // Always return success even if email doesn't exist (prevents enumeration)
-    if (!user) {
-        return res.status(200).json({
-            success: true,
-            message: "If an account exists with this email, a reset link has been sent.",
-        });
+    if (!user) return reply();
+    const eligible = await userModel.findOneAndUpdate({
+        _id: user._id,
+        $or: [{ resetPasswordRequestedAt: null }, { resetPasswordRequestedAt: { $lte: new Date(Date.now() - 60_000) } }],
+    }, { $set: { resetPasswordRequestedAt: new Date() } }, { returnDocument: 'after' });
+    if (!eligible) return reply();
+    if (!eligible.password) {
+        try { await sendGoogleAuthReminderEmail(email); } catch { console.error('Google sign-in reminder delivery failed'); }
+        return reply();
     }
-
-    // Send a helpful sign-in reminder email to Google OAuth users (fire-and-forget)
-    if (user.authProvider === "google") {
-        sendGoogleAuthReminderEmail(email).catch(err => console.error("Failed to send Google auth reminder:", err));
-        return res.status(200).json({
-            success: true,
-            message: "If an account exists with this email, a reset link has been sent.",
-        });
-    }
-
-    // Generate a secure reset token
     const rawToken = generateResetToken();
-    // Store hashed version in DB so a database leak won't expose valid tokens
-    user.resetPasswordToken = hashToken(rawToken);
-    user.resetPasswordExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-    await user.save();
-
-    // Build the reset URL pointing to the frontend page
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${rawToken}`;
-
-    // Send email in background (fire-and-forget) — respond to user immediately.
-    // This prevents timeout on slow cloud servers (Render cold start + Gmail SMTP).
-    sendResetPasswordEmail(email, resetUrl).catch(err => console.error("Failed to send reset password email:", err));
-
-    return res.status(200).json({
-        success: true,
-        message: "If an account exists with this email, a reset link has been sent.",
-    });
+    const hash = hashToken(rawToken);
+    await userModel.updateOne({ _id: user._id }, { $set: { resetPasswordToken: hash, resetPasswordExpiry: new Date(Date.now() + 15 * 60_000) } });
+    try {
+        await sendResetPasswordEmail(email, authConfig().frontend + '/reset-password/' + rawToken);
+    } catch {
+        await userModel.updateOne({ _id: user._id, resetPasswordToken: hash }, { $set: { resetPasswordToken: null, resetPasswordExpiry: null } });
+        console.error('Password reset email delivery failed');
+    }
+    return reply();
 });
 
-
-/**
- * @route POST /api/auth/reset-password
- * @description Reset the user's password using the token from the email link.
- *              Token is hashed and compared against the stored hash in DB.
- * @access Public
- */
 const resetPasswordController = asyncHandler(async (req, res) => {
     const { token, password } = req.body;
-
-    if (!token || !password) {
-        throw new AppError("Please provide token and new password", 400);
-    }
-
-    // Hash the incoming token to match against DB
-    const hashedToken = hashToken(token);
-
-    const user = await userModel.findOne({
-        resetPasswordToken: hashedToken,
-        resetPasswordExpiry: { $gt: new Date() }, // Token must not be expired
-    });
-
-    if (!user) {
-        throw new AppError("Invalid or expired reset token. Please request a new one.", 400);
-    }
-
-    // Update password (pre-save hook will hash it)
-    user.password = password;
-    user.resetPasswordToken = null;
-    user.resetPasswordExpiry = null;
-    await user.save();
-
-    return res.status(200).json({
-        success: true,
-        message: "Password reset successful. Please login with your new password.",
-    });
+    // Query updates do not execute the save hook: hash explicitly once here.
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await userModel.findOneAndUpdate({
+        resetPasswordToken: hashToken(token), resetPasswordExpiry: { $gt: new Date() },
+        password: { $type: 'string', $ne: '' },
+    }, {
+        $set: { password: passwordHash, resetPasswordToken: null, resetPasswordExpiry: null },
+        $inc: { tokenVersion: 1 },
+    }, { returnDocument: 'after' });
+    if (!user) throw new AppError("Invalid or expired reset token. Please request a new one.", 400);
+    require('../config/auth.config').clearAuthCookie(res);
+    return res.status(200).json({ success: true, message: "Password reset successful. Please login with your new password." });
 });
 
-
-/**
- * @route GET /api/auth/google/callback
- * @description Google OAuth callback handler. Passport handles authentication,
- *              we sign JWT and redirect to frontend workspace.
- *              Token is passed via URL query param because cross-domain cookies
- *              are blocked by modern browsers during redirects.
- * @access Public (Callback from Google)
- */
 const googleAuthCallbackController = asyncHandler(async (req, res) => {
-    if (!req.user) {
-        const frontendUrl = (process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app").replace(/\/$/, "");
-        return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
-    }
-
-    // Generate JWT token
-    const token = jwt.sign(
-        { id: req.user._id, username: req.user.username },
-        process.env.JWT_SECRET,
-        { expiresIn: "1d" }
-    );
-
-    // Also set the cookie (for same-domain or subsequent API calls)
-    res.cookie("token", token, getCookieOptions());
-
-    // Pass token in URL so the frontend can store it via a dedicated API call
-    const frontendUrl = (process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app").replace(/\/$/, "");
-    return res.redirect(`${frontendUrl}/workspace?token=${token}`);
+    const frontend = authConfig().frontend;
+    if (!req.user) return res.redirect(frontend + '/login?error=google_auth_failed');
+    signTokenAndSetCookie(req.user, res, 'google');
+    return res.redirect(frontend + '/workspace');
 });
 
-
-/**
- * @route POST /api/auth/contact
- * @description Submit the landing page contact form and send email to owner.
- * @access Public
- */
 const contactController = asyncHandler(async (req, res) => {
     const { name, email, message } = req.body;
 
@@ -484,40 +199,16 @@ const contactController = asyncHandler(async (req, res) => {
     });
 });
 
-
-/**
- * @route POST /api/auth/set-token
- * @description Receives a JWT token in the request body, validates it,
- *              and sets it as an httpOnly cookie. Used by the frontend
- *              after Google OAuth redirect (cross-domain cookies are blocked
- *              by modern browsers, so token is passed via URL query param).
- * @access Public
- */
-const setTokenController = asyncHandler(async (req, res) => {
-    const { token } = req.body;
-
-    if (!token) {
-        throw new AppError("Token is required", 400);
-    }
-
-    // Verify the token is valid before setting it as a cookie
-    try {
-        jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-        throw new AppError("Invalid or expired token", 401);
-    }
-
-    res.cookie("token", token, getCookieOptions());
-
-    return res.status(200).json({
-        success: true,
-        message: "Token set successfully",
-        token,
-    });
+const reauthenticateController = asyncHandler(async (req, res) => {
+    const user = await userModel.findById(req.user.id);
+    const valid = await bcrypt.compare(req.body.password, user?.password || await dummyPasswordHash);
+    if (!user?.password || !user.isVerified || !valid) throw new AppError("Unable to confirm password", 400);
+    signTokenAndSetCookie(user, res);
+    res.json({ success: true });
 });
 
-
 module.exports = {
+    reauthenticateController,
     registerUserController,
     loginUserController,
     logoutUserController,
@@ -527,6 +218,5 @@ module.exports = {
     forgotPasswordController,
     resetPasswordController,
     googleAuthCallbackController,
-    setTokenController,
     contactController,
 };

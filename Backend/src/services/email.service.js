@@ -5,6 +5,9 @@ const nodemailer = require("nodemailer");
 // Setup: Google Account → Security → 2-Step Verification → App Passwords
 const transporter = nodemailer.createTransport({
     service: "gmail",
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 30_000,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
@@ -26,11 +29,7 @@ async function sendEmail({ to, subject, html, replyTo }) {
         mailOptions.replyTo = replyTo;
     }
 
-    console.log(`[Email] Sending "${subject}" to ${mailOptions.to}`);
-
     const info = await transporter.sendMail(mailOptions);
-
-    console.log(`[Email] Sent successfully. MessageId: ${info.messageId}`);
     return info;
 }
 
@@ -86,7 +85,7 @@ async function sendResetPasswordEmail(to, resetUrl) {
 
 // ── Google Auth Reminder Email ──────────────────────────────────────────────
 async function sendGoogleAuthReminderEmail(to) {
-    const loginUrl = `${process.env.FRONTEND_URL || "https://ai-resume-analyzer-gray-ten.vercel.app"}/login`;
+    const loginUrl = `${require('../config/auth.config').authConfig().frontend}/login`;
     const html = `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #fafafa; border-radius: 16px;">
             <h2 style="color: #1e293b; margin-bottom: 8px;">Google Sign-In Reminder</h2>

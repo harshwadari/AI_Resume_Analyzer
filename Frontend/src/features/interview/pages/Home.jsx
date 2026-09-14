@@ -44,8 +44,8 @@ const Home = () => {
       if (interviewReport?._id) {
         navigate(`/interview/${interviewReport._id}`);
       }
-    } catch (submitError) {
-      console.error(submitError);
+    } catch {
+      // The hook provides the safe, user-facing error message.
     }
   };
 

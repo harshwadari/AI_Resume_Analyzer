@@ -1,3 +1,5 @@
+const { authConfig } = require('./config/auth.config');
+const { csrfGuard } = require('./middlewares/csrf.middleware');
 const express = require('express');
 const cookieParser = require("cookie-parser");
 const multer = require("multer");
@@ -10,18 +12,15 @@ const passport = require("passport");
 require("./config/passport.config");
 
 const app = express();
-const allowedOrigins = [
-    "http://localhost:5173",
-    "https://ai-resume-analyzer-gray-ten.vercel.app",
-    process.env.FRONTEND_URL,
-].filter(Boolean).map((origin) => origin.replace(/\/$/, ""));
+const allowedOrigins = [authConfig().frontend];
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 0));
 
 // ── Security: Helmet sets various HTTP headers to protect against
 // common attacks like XSS, clickjacking, MIME-type sniffing, etc. ──
 app.use(helmet());
 app.use(passport.initialize());
 
-app.use(express.json());
+app.use(express.json({ limit: "32kb" }));
 app.use(cookieParser());
 app.use(cors({
     origin: (origin, callback) => {
@@ -31,9 +30,12 @@ app.use(cors({
 
         return callback(new AppError("Not allowed by CORS", 403));
     },
+    allowedHeaders: ["Content-Type", "X-Requested-With"],
+    methods: ["GET", "POST", "OPTIONS"],
     credentials: true
 }));
 
+app.use("/api", (req, res, next) => { res.set("Cache-Control", "no-store"); next(); }, csrfGuard);
 app.use("/api/auth", authRouter);
 app.use("/api/interview", interviewRouter);
 
@@ -71,20 +73,18 @@ app.use((err, req, res, next) => {
     }
 
     if (err.code === 11000) {
-        const field = Object.keys(err.keyPattern)[0];
+
         return res.status(400).json({
             success: false,
-            message: `An account with this ${field} already exists`,
+            message: "Unable to complete the request with these details",
         });
     }
 
     // Unexpected errors — log for debugging, send generic message to client
-    console.error("Unhandled error:", err);
+    require('./utils/securityLog').logFailure('Request failed', err);
     return res.status(500).json({
         success: false,
-        message: process.env.NODE_ENV === "production"
-            ? "Internal server error"
-            : err.message || "Internal server error"
+        message: "Internal server error"
     });
 });
 

@@ -29,7 +29,8 @@ const severityClasses = {
 
 const Interview = () => {
   const { interviewId } = useParams();
-  const { getReportById, report, loading, error } = useInterview();
+  const { getReportById, report: cachedReport, loading, error } = useInterview();
+  const report = cachedReport?._id === interviewId ? cachedReport : null;
   const [activeSection, setActiveSection] = useState("technical");
   const [openItems, setOpenItems] = useState({});
 

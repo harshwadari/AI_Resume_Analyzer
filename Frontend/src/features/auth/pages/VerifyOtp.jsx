@@ -118,7 +118,7 @@ const VerifyOtp = () => {
                 One last step — verify your email.
               </h1>
               <p className="mt-5 max-w-md text-base leading-8 text-white/85">
-                We've sent a 6-digit code to <strong>{email}</strong>. Enter it below to activate your account.
+                If verification is needed, a 6-digit code will be sent to <strong>{email}</strong>. Enter it below to activate your account.
               </p>
             </div>
 
@@ -148,9 +148,10 @@ const VerifyOtp = () => {
               </div>
               <h2 className="mt-5 text-4xl font-semibold text-slate-950 dark:text-slate-50">Enter verification code</h2>
               <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-400">
-                We sent a 6-digit code to <strong className="text-slate-800 dark:text-slate-200">{email}</strong>. It expires in 5 minutes.
+                If eligible, a 6-digit code will be sent to <strong className="text-slate-800 dark:text-slate-200">{email}</strong>. It expires in 5 minutes.
               </p>
 
+              <p className="mt-3 text-sm">Already registered? <Link to="/login" className="underline">Sign in</Link> or <Link to="/forgot-password" className="underline">recover your password</Link>. If no code arrives, check the address and try a different username when registering.</p>
               <form onSubmit={onSubmit} className="mt-8 space-y-6">
                 {/* ── OTP Input Boxes ── */}
                 <div className="flex items-center justify-center gap-3">

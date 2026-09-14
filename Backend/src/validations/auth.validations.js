@@ -22,6 +22,7 @@ const registerSchema = z.object({
     password: z
         .string({ required_error: "Password is required" })
         .min(8, "Password must be at least 8 characters")
+        .refine(value => Buffer.byteLength(value, "utf8") <= 72, "Password must be at most 72 UTF-8 bytes")
         .regex(
             /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
             "Password must contain at least 1 lowercase, 1 uppercase, and 1 number"
@@ -36,7 +37,8 @@ const loginSchema = z.object({
         .email("Please enter a valid email"),
     password: z
         .string({ required_error: "Password is required" })
-        .min(1, "Password is required"),
+        .min(1, "Password is required")
+        .max(1024, "Password is too long"),
 });
 
 const verifyOtpSchema = z.object({
@@ -70,10 +72,11 @@ const forgotPasswordSchema = z.object({
 const resetPasswordSchema = z.object({
     token: z
         .string({ required_error: "Reset token is required" })
-        .min(1, "Reset token is required"),
+        .regex(/^[a-f0-9]{64}$/, "Invalid reset token"),
     password: z
         .string({ required_error: "Password is required" })
         .min(8, "Password must be at least 8 characters")
+        .refine(value => Buffer.byteLength(value, "utf8") <= 72, "Password must be at most 72 UTF-8 bytes")
         .regex(
             /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
             "Password must contain at least 1 lowercase, 1 uppercase, and 1 number"
@@ -96,7 +99,10 @@ const contactSchema = z.object({
         .min(10, "Message must be at least 10 characters long"),
 });
 
+const reauthenticateSchema = z.object({ password: z.string().min(1).max(1024) });
+
 module.exports = {
+    reauthenticateSchema,
     registerSchema,
     loginSchema,
     verifyOtpSchema,

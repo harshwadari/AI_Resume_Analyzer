@@ -1,3 +1,4 @@
+import LinkGoogle from './features/auth/pages/LinkGoogle.jsx';
 import { createBrowserRouter } from "react-router-dom";
 import GuestOnly from "./features/auth/components/GuestOnly.jsx";
 import Protected from "./features/auth/components/Protected.jsx";
@@ -11,6 +12,7 @@ import Home from "./features/interview/pages/Home.jsx";
 import Interview from "./features/interview/pages/Interview.jsx";
 
 export const router = createBrowserRouter([
+  { path: "/link-google", element: <Protected><LinkGoogle /></Protected> },
   {
     path: "/",
     element: <Landing />
@@ -29,11 +31,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/forgot-password",
-    element: <GuestOnly><ForgotPassword /></GuestOnly>
+    element: <ForgotPassword />
   },
   {
     path: "/reset-password/:token",
-    element: <GuestOnly><ResetPassword /></GuestOnly>
+    element: <ResetPassword />
   },
   {
     path: "/workspace",

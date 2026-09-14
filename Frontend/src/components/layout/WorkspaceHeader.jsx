@@ -8,8 +8,8 @@ const WorkspaceHeader = ({ title, subtitle, showBack = false }) => {
   const { handleLogout, loading } = useAuth();
 
   const onLogout = async () => {
-    await handleLogout();
-    navigate("/");
+    const result = await handleLogout();
+    navigate(result.success ? "/" : "/login", { state: { logoutFailed: !result.success } });
   };
 
   return (
@@ -45,6 +45,7 @@ const WorkspaceHeader = ({ title, subtitle, showBack = false }) => {
 
         <div className="flex items-center gap-3">
           <ThemeToggle />
+          <Link to="/link-google" className="text-sm">Link Google</Link>
 
           <button
             type="button"

@@ -1,3 +1,5 @@
+import { useContext } from 'react';
+import { AuthContext } from '../auth.state';
 import React, { useState } from "react";
 import { ArrowRight, Eye, EyeOff, KeyRound, Sparkles } from "lucide-react";
 import { Link, useParams, useNavigate } from "react-router-dom";
@@ -6,6 +8,7 @@ import ThemeToggle from "../../../components/ui/ThemeToggle.jsx";
 import { resetPassword } from "../../../services/auth.api";
 
 const ResetPassword = () => {
+  const { setUser } = useContext(AuthContext);
   const { token } = useParams(); // Get reset token from URL
   const navigate = useNavigate();
 
@@ -39,6 +42,7 @@ const ResetPassword = () => {
     try {
       setLoading(true);
       await resetPassword({ token, password });
+      setUser(null);
       setSuccess(true);
       // Auto-redirect to login after 3 seconds
       setTimeout(() => navigate("/login"), 3000);

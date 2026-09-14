@@ -1,16 +1,13 @@
-const dns = require("dns");
-dns.setServers(["8.8.8.8","8.8.4.4"]);
-
 const mongoose = require('mongoose');
-
-async function connectDB(){
-    try{
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log("Connected to DB sucessfully");
-    }
-    catch(err){
-        console.log(err)
-    }
-
+const dns = require('node:dns');
+function configureMongoDns() {
+    const servers = process.env.MONGO_DNS_SERVERS?.split(',').map(value => value.trim()).filter(Boolean);
+    if (servers?.length) dns.setServers(servers);
 }
-module.exports = connectDB
+async function connectDB() {
+    if (!process.env.MONGO_URI) throw new Error('Database configuration is missing');
+    configureMongoDns();
+    return mongoose.connect(process.env.MONGO_URI, { autoIndex: false, serverSelectionTimeoutMS: 10000 });
+}
+module.exports = connectDB;
+module.exports.configureMongoDns = configureMongoDns;

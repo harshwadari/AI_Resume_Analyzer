@@ -28,7 +28,7 @@ const userSchema = new mongoose.Schema({
         // Conditionally required: local users must have a password,
         // Google OAuth users will not have one
         required:[
-            function () { return this.authProvider === "local"; },
+            function () { return !this.googleId; },
             "password is required"
         ],
         // NOTE: Password format validation (regex, minlength) is handled by
@@ -42,6 +42,7 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    tokenVersion: { type: Number, default: 0, min: 0 },
     otp: {
         type: String,
         default: null,
@@ -50,6 +51,9 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: null,
     },
+    otpHash: { type: String, default: null },
+    otpAttempts: { type: Number, default: 0 },
+    otpSentAt: { type: Date, default: null },
 
     // ── Forgot Password Fields ──
     resetPasswordToken: {
@@ -60,6 +64,7 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: null,
     },
+    resetPasswordRequestedAt: { type: Date, default: null },
 
     // ── Google OAuth Fields ──
     googleId: {
@@ -67,6 +72,8 @@ const userSchema = new mongoose.Schema({
         default: null,
     },
     authProvider: {
+        // Legacy metadata only. Credential availability is determined by
+        // password and googleId independently; keep existing data compatible.
         type: String,
         enum: ["local", "google"],
         default: "local",
@@ -85,6 +92,11 @@ const userSchema = new mongoose.Schema({
 
 }, {
     timestamps: true
+});
+
+userSchema.index({ googleId: 1 }, {
+    unique: true,
+    partialFilterExpression: { googleId: { $type: "string" } },
 });
 
 /**

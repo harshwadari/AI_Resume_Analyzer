@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ArrowRight, Eye, EyeOff, LogIn, Sparkles } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import LoadingSpinner from "../../../components/ui/LoadingSpinner.jsx";
 import ThemeToggle from "../../../components/ui/ThemeToggle.jsx";
 import { useAuth } from "../hooks/useAuth";
@@ -9,6 +9,10 @@ import { getGoogleAuthUrl } from "../../../services/auth.api";
 const Login = () => {
   const { loading, handleLogin, error } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const oauthError = new URLSearchParams(location.search).has('error')
+    ? 'Google sign-in could not be completed. Try again, or sign in with your password and link Google from your workspace.'
+    : location.state?.logoutFailed ? 'Local data was cleared, but server logout could not be confirmed. Please retry when the service is available.' : '';
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -121,9 +125,9 @@ const Login = () => {
                   </Link>
                 </div>
 
-                {(formError || error) && (
+                {(formError || error || oauthError) && (
                   <div className="rounded-2xl border border-rose-300/60 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
-                    {formError || error}
+                    {formError || error || oauthError}
                   </div>
                 )}
 

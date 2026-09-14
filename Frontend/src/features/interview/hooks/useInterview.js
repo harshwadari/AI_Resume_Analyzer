@@ -1,6 +1,6 @@
 import { getInterviewReportById, getAllInterviewReports, getInterviewReport } from "../services/interview.api";
 import { useCallback, useContext } from "react";
-import { InterviewContext } from "../interview.context";
+import { InterviewContext } from "../interview.state";
 
 
 export const useInterview = () => {
@@ -19,7 +19,6 @@ export const useInterview = () => {
             setReport(response.interviewReport);
             return response.interviewReport;
         } catch (err) {
-            console.error(err);
             setError(err?.response?.data?.message || "Failed to generate interview report");
             throw err;
         } finally {
@@ -35,7 +34,6 @@ export const useInterview = () => {
             return response.interviewReport;
         }
         catch (err) {
-            console.error(err);
             setError(err?.response?.data?.message || "Failed to load interview report");
             throw err;
         } finally {
@@ -51,7 +49,6 @@ export const useInterview = () => {
             setReports(response.interviewReports || []);
             return response.interviewReports || [];
         } catch (err) {
-            console.error(err);
             setError(err?.response?.data?.message || "Failed to load interview reports");
             throw err;
         } finally {
