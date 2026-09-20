@@ -53,6 +53,8 @@ const Home = () => {
     <div className="page-shell px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <WorkspaceHeader
+          showBack
+          backTo="/dashboard"
           title="Generate your interview strategy"
           subtitle="Paste the role you are targeting, add your resume or experience summary, and create a focused interview prep report in one step."
         />

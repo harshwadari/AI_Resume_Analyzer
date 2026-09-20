@@ -16,7 +16,7 @@ const GuestOnly = ({ children }) => {
 
   if (user) {
     if (authSuccess) return <AuthSuccess onComplete={complete} />;
-    return <Navigate to="/workspace" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;

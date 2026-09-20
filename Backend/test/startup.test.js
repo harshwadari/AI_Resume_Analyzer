@@ -36,7 +36,7 @@ test('successful Google callback sets cookie and redirects without a JWT in the 
         res.redirect = url => { redirect.call(res, url); resolve(); return res; };
         controller.googleAuthCallbackController({ user: { _id: 'user', tokenVersion: 2 } }, res, reject);
     });
-    assert.equal(res.location, 'http://localhost:5173/workspace');
+    assert.equal(res.location, 'http://localhost:5173/auth/success');
     assert.equal(res.cookies.token.options.httpOnly, true);
     const claims = require('jsonwebtoken').verify(res.cookies.token.value, 'synthetic-test-secret-at-least-32-bytes', {
         algorithms: ['HS256'], issuer: 'prepwise', audience: 'prepwise-web',

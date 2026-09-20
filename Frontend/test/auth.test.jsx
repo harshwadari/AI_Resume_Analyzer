@@ -161,16 +161,21 @@ for (const action of ['login', 'otp']) {
     try {
       await act(async () => root.render(<AuthProvider><PrivateStateBoundary><MemoryRouter initialEntries={['/login']}><Routes>
         <Route path="/login" element={<GuestOnly><SignIn /></GuestOnly>} />
-        <Route path="/workspace" element={<p id="workspace">Workspace</p>} />
+        <Route path="/dashboard" element={<p id="dashboard">Dashboard selection</p>} />
       </Routes></MemoryRouter></PrivateStateBoundary></AuthProvider>));
       getMe.mockResolvedValue({ user: authenticated });
       await click('submit');
-      expect(element.querySelector('[role="status"]').textContent).toContain('You’re signed in!');
-      expect(element.querySelector('#workspace')).toBeNull();
-      await act(async () => vi.advanceTimersByTime(899));
-      expect(element.querySelector('#workspace')).toBeNull();
+      expect(element.querySelector('[role="status"]').textContent).toContain('Authentication successful');
+      expect(element.querySelector('[role="status"]').textContent).toContain('in 3');
+      expect(element.querySelector('#dashboard')).toBeNull();
+      await act(async () => vi.advanceTimersByTime(1000));
+      expect(element.querySelector('[role="status"]').textContent).toContain('in 2');
+      await act(async () => vi.advanceTimersByTime(1000));
+      expect(element.querySelector('[role="status"]').textContent).toContain('in 1');
+      await act(async () => vi.advanceTimersByTime(999));
+      expect(element.querySelector('#dashboard')).toBeNull();
       await act(async () => vi.advanceTimersByTime(1));
-      expect(element.querySelector('#workspace')).not.toBeNull();
+      expect(element.querySelector('#dashboard')).not.toBeNull();
     } finally { vi.useRealTimers(); }
   });
 }
@@ -190,4 +195,20 @@ test('blocked session cookie never produces authenticated state or success', asy
   expect(result.success).toBe(false);
   expect(element.querySelector('#user').textContent).toBe('guest');
   expect(element.querySelector('#error').textContent).toContain('session could not be confirmed');
+});
+
+test('signup still requires email verification and does not start the success transition early', async () => {
+  register.mockResolvedValue({ requiresVerification: true, email: 'new@example.com' });
+  let result;
+  function RegistrationProbe() {
+    const { handleRegister } = useAuth();
+    const { user, authSuccess } = useContext(AuthContext);
+    return <><p id="state">{user ? 'signed in' : 'guest'}:{String(authSuccess)}</p><button id="register" onClick={async () => {
+      result = await handleRegister({ username: 'new-user', email: 'new@example.com', password: 'ExamplePass9' });
+    }}>Register</button></>;
+  }
+  await act(async () => root.render(<AuthProvider><RegistrationProbe /></AuthProvider>));
+  await click('register');
+  expect(result).toEqual({ success: true, requiresVerification: true, email: 'new@example.com' });
+  expect(element.querySelector('#state').textContent).toBe('guest:false');
 });

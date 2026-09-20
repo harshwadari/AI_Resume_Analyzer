@@ -10,8 +10,14 @@ import ResetPassword from "./features/auth/pages/ResetPassword.jsx";
 import Landing from "./features/marketing/pages/Landing.jsx";
 import Home from "./features/interview/pages/Home.jsx";
 import Interview from "./features/interview/pages/Interview.jsx";
+import Dashboard from './features/dashboard/pages/Dashboard.jsx';
+import Recruiter from './features/dashboard/pages/Recruiter.jsx';
+import AuthRedirect from './features/auth/pages/AuthRedirect.jsx';
 
 export const router = createBrowserRouter([
+  { path: '/auth/success', element: <Protected><AuthRedirect /></Protected> },
+  { path: '/dashboard', element: <Protected><Dashboard /></Protected> },
+  { path: '/recruiter', element: <Protected><Recruiter /></Protected> },
   { path: "/link-google", element: <Protected><LinkGoogle /></Protected> },
   {
     path: "/",

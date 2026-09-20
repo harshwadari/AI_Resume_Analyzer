@@ -99,10 +99,10 @@ const Landing = () => {
                 <ThemeToggle />
               </div>
               <Link
-                to={user ? "/workspace" : "/login"}
+                to={user ? "/dashboard" : "/login"}
                 className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 dark:bg-white dark:text-slate-950"
               >
-                {initialLoading ? "Loading..." : user ? "Open workspace" : "Login"}
+                {initialLoading ? "Loading..." : user ? "Open dashboard" : "Login"}
                 <ArrowRight size={16} />
               </Link>
             </nav>
@@ -128,10 +128,10 @@ const Landing = () => {
 
               <div className="mt-8 flex flex-col gap-4 sm:flex-row">
                 <Link
-                  to={user ? "/workspace" : "/login"}
+                  to={user ? "/dashboard" : "/login"}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-fuchsia-500 to-orange-400 px-6 py-4 text-base font-semibold text-white transition hover:-translate-y-0.5"
                 >
-                  {user ? "Go to workspace" : "Login to start"}
+                  {user ? "Go to dashboard" : "Login to start"}
                   <ArrowRight size={18} />
                 </Link>
                 <Link
@@ -331,7 +331,7 @@ const Landing = () => {
             <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-900 dark:text-slate-50">Platform</h3>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <Link to={user ? "/workspace" : "/login"} className="text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50">
+                <Link to={user ? "/dashboard" : "/login"} className="text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50">
                   Workspace
                 </Link>
               </li>

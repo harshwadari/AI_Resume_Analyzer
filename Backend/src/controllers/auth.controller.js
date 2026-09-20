@@ -192,7 +192,7 @@ const googleAuthCallbackController = asyncHandler(async (req, res) => {
     const frontend = authConfig().frontend;
     if (!req.user) return res.redirect(frontend + '/login?error=google_auth_failed');
     signTokenAndSetCookie(req.user, res, 'google');
-    return res.redirect(frontend + '/workspace');
+    return res.redirect(frontend + '/auth/success');
 });
 
 const contactController = asyncHandler(async (req, res) => {

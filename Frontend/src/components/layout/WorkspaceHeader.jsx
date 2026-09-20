@@ -4,7 +4,7 @@ import ThemeToggle from "../ui/ThemeToggle.jsx";
 import { useAuth } from "../../features/auth/hooks/useAuth";
 import DeleteAccount from '../../features/auth/components/DeleteAccount';
 
-const WorkspaceHeader = ({ title, subtitle, showBack = false }) => {
+const WorkspaceHeader = ({ title, subtitle, showBack = false, backTo = '/workspace', badge = 'Interview workspace' }) => {
   const navigate = useNavigate();
   const { handleLogout, loading } = useAuth();
 
@@ -19,7 +19,8 @@ const WorkspaceHeader = ({ title, subtitle, showBack = false }) => {
         <div className="flex items-start gap-4">
           {showBack && (
             <Link
-              to="/workspace"
+              to={backTo}
+              aria-label={backTo === '/dashboard' ? 'Back to dashboard selection' : 'Back to workspace'}
               className="mt-1 flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200/60 bg-white/80 text-slate-700 backdrop-blur-md transition hover:bg-white dark:border-white/10 dark:bg-slate-800/80 dark:text-blue-400 dark:hover:bg-slate-800"
             >
               <ArrowLeft size={18} />
@@ -29,7 +30,7 @@ const WorkspaceHeader = ({ title, subtitle, showBack = false }) => {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-blue-200/40 bg-blue-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-blue-600 backdrop-blur-md dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-400">
               <Sparkles size={14} className="text-blue-500 dark:text-blue-400" />
-              Interview workspace
+              {badge}
             </div>
 
             <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
