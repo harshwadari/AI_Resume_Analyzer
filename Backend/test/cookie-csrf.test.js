@@ -2,6 +2,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { load, response } = require('./helpers');
 
+test('OAuth callback supports the first-party proxy and rejects unrelated destinations', () => {
+    const env = { NODE_ENV: 'production', FRONTEND_URL: 'https://app.example.com', BACKEND_URL: 'https://backend.example.net',
+        GOOGLE_CALLBACK_URL: 'https://app.example.com/api/auth/google/callback', COOKIE_SAME_SITE: 'lax' };
+    const config = load('src/config/auth.config.js', {}, env);
+    assert.equal(config.authConfig().googleCallback, env.GOOGLE_CALLBACK_URL);
+    assert.equal(config.cookieOptions().sameSite, 'lax');
+    for (const url of ['https://evil.example/api/auth/google/callback', 'https://app.example.com/wrong', 'https://app.example.com/api/auth/google/callback?next=evil']) {
+        env.GOOGLE_CALLBACK_URL = url;
+        assert.throws(() => config.authConfig(), /GOOGLE_CALLBACK_URL/);
+    }
+});
+
 test('production cookies are secure/httpOnly/host-only and clearing uses the same scope', () => {
     const config = load('src/config/auth.config.js', {}, {
         NODE_ENV: 'production', FRONTEND_URL: 'https://app.example.com', BACKEND_URL: 'https://api.example.com',

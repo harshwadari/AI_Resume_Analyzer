@@ -12,7 +12,12 @@ function authConfig() {
     if (production && (!frontend.startsWith('https:') || !backend.startsWith('https:'))) throw new Error('Production authentication requires HTTPS');
     const sameSite = process.env.COOKIE_SAME_SITE || (production ? 'none' : 'lax');
     if (!['none', 'lax', 'strict'].includes(sameSite) || (sameSite === 'none' && !production)) throw new Error('Invalid authentication cookie configuration');
-    return { frontend, backend, production, sameSite };
+    const callback = new URL(process.env.GOOGLE_CALLBACK_URL || backend + '/api/auth/google/callback');
+    if (![frontend, backend].includes(callback.origin) || callback.pathname !== '/api/auth/google/callback' ||
+        callback.username || callback.password || callback.search || callback.hash) {
+        throw new Error('GOOGLE_CALLBACK_URL must use the frontend or backend origin and /api/auth/google/callback');
+    }
+    return { frontend, backend, production, sameSite, googleCallback: callback.href };
 }
 function cookieOptions() {
     const { production, sameSite } = authConfig();

@@ -57,6 +57,48 @@ async function request(path, { body, cookie, headers = {}, method = body === und
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
 
+test('HTTP: production cookie login, refresh and logout work with the first-party frontend origin', async () => {
+    const original = { NODE_ENV: process.env.NODE_ENV, COOKIE_SAME_SITE: process.env.COOKIE_SAME_SITE,
+        FRONTEND_URL: process.env.FRONTEND_URL, BACKEND_URL: process.env.BACKEND_URL };
+    // CORS is captured at app construction, so keep its configured origin for
+    // requests while testing the production controller's cookie configuration.
+    const origin = process.env.FRONTEND_URL;
+    Object.assign(process.env, { NODE_ENV: 'production', COOKIE_SAME_SITE: 'lax',
+        FRONTEND_URL: 'https://app.example.com', BACKEND_URL: 'https://backend.example.net' });
+    try {
+        await User.create({ username: 'production-cookie', email: 'production@example.com', password: 'ExamplePass9', isVerified: true });
+        // Exercise real controllers and auth middleware through a separate app
+        // configured with the production origin at creation time.
+        const appPath = require.resolve('../src/app');
+        delete require.cache[appPath];
+        const app = require('../src/app');
+        const productionServer = await new Promise(resolve => {
+            const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+        });
+        const previousBase = apiBase;
+        apiBase = `http://127.0.0.1:${productionServer.address().port}`;
+        try {
+            const login = await request('/api/auth/login', { body: { email: 'production@example.com', password: 'ExamplePass9' } });
+            assert.equal(login.status, 200);
+            const cookie = login.headers.get('set-cookie');
+            assert.match(cookie, /HttpOnly/);
+            assert.match(cookie, /Secure/);
+            assert.match(cookie, /SameSite=Lax/);
+            assert.doesNotMatch(cookie, /Domain=/i);
+            assert.equal(login.headers.get('access-control-allow-origin'), 'https://app.example.com');
+            assert.equal((await request('/api/auth/get-me', { cookie: cookieFrom(login) })).status, 200);
+            assert.equal((await request('/api/auth/logout', { body: {}, cookie: cookieFrom(login) })).status, 200);
+            assert.equal((await request('/api/auth/get-me', { cookie: cookieFrom(login) })).status, 401);
+        } finally {
+            apiBase = previousBase;
+            await new Promise(resolve => productionServer.close(resolve));
+        }
+    } finally {
+        Object.assign(process.env, original);
+        assert.equal(process.env.FRONTEND_URL, origin);
+    }
+});
+
 function invoke(name, body = {}, cookies = {}) {
     return new Promise((resolve, reject) => {
         const res = response();

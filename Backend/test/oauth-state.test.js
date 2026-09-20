@@ -19,6 +19,7 @@ test('OAuth state binds browser, expires, and is consumed before authentication'
     const start = response();
     await oauth.startGoogle({}, start, err => { if (err) throw err; });
     assert.equal(hashToken(redirectOptions.state), record._id);
+    assert.equal(redirectOptions.prompt, 'select_account');
     const req = { query: { state: redirectOptions.state }, cookies: { oauth_browser: start.cookies.oauth_browser.value } };
     let error;
     await oauth.verifyGoogleState({ ...req, cookies: { oauth_browser: '0'.repeat(64) } }, response(), e => { error = e; });

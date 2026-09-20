@@ -30,12 +30,11 @@ const Login = () => {
 
     const result = await handleLogin({ email, password });
     if (result.success) {
-      localStorage.removeItem("pendingVerificationEmail");
-      navigate("/workspace");
+      try { localStorage.removeItem("pendingVerificationEmail"); } catch { /* Optional storage. */ }
     } else if (result.requiresVerification) {
       // Email not verified — redirect to OTP page
       const verificationEmail = result.email || email;
-      localStorage.setItem("pendingVerificationEmail", verificationEmail);
+      try { localStorage.setItem("pendingVerificationEmail", verificationEmail); } catch { /* Route state still carries the email. */ }
       navigate("/verify-otp", { state: { email: verificationEmail } });
     }
   };

@@ -28,11 +28,10 @@ const Register = () => {
     const result = await handleRegister({ username, email, password });
     if (result.success && result.requiresVerification) {
       const verificationEmail = result.email || email;
-      localStorage.setItem("pendingVerificationEmail", verificationEmail);
+      try { localStorage.setItem("pendingVerificationEmail", verificationEmail); } catch { /* Route state still carries the email. */ }
       navigate("/verify-otp", { state: { email: verificationEmail } });
     } else if (result.success) {
-      localStorage.removeItem("pendingVerificationEmail");
-      navigate("/workspace");
+      try { localStorage.removeItem("pendingVerificationEmail"); } catch { /* Optional storage. */ }
     }
   };
 

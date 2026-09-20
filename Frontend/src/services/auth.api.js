@@ -1,5 +1,5 @@
-import { createApiClient } from './http';
-const base = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '') + '/api/auth';
+import { createApiClient, apiOrigin } from './http';
+const base = apiOrigin + '/api/auth';
 const api = createApiClient();
 const post = async (path, body) => (await api.post(base + path, body)).data;
 export const register = (body) => post('/register', body);

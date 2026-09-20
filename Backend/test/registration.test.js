@@ -30,3 +30,13 @@ test('registration handles a unique-index race as a duplicate error, not OTP suc
     await assert.rejects(controller.registerUserController({ body: { username: 'existing', email: 'user@example.com', password: 'ExamplePass9' } }, response()),
         { statusCode: 409 });
 });
+
+test('new registration reports pending-account recovery when email delivery fails', async () => {
+    const controller = load('src/controllers/auth.controller.js', {
+        '../utils/asyncHandler': fn => fn,
+        '../models/user.model': { findOne: () => ({ select: async () => null }), create: async () => ({ _id: 'pending' }) },
+        '../services/verification.service': { issueOtp: async () => { throw Object.assign(new Error('delivery failed'), { statusCode: 503 }); } },
+    }, { EMAIL_PROVIDER: 'brevo', BREVO_API_KEY: 'synthetic', BREVO_FROM_EMAIL: 'sender@example.com' });
+    await assert.rejects(controller.registerUserController({ body: { username: 'new', email: 'new@example.com', password: 'ExamplePass9' } }, response()),
+        { statusCode: 503, message: 'Your account is pending verification, but the email could not be sent. Please sign in to retry verification shortly.' });
+});

@@ -8,7 +8,8 @@ function load(relative, mocks = {}, env = {}) {
     const realRequire = createRequire(filename);
     const context = {
         module: { exports: {} }, require: (key) => key in mocks ? mocks[key] : realRequire(key),
-        process: { env }, console: { error() {}, log() {} }, Buffer, URL, Date, __dirname: path.dirname(filename),
+        process: { env }, console: { error() {}, log() {} }, Buffer, URL, Date, AbortSignal,
+        fetch: mocks.fetch || globalThis.fetch, __dirname: path.dirname(filename),
     };
     vm.runInNewContext(fs.readFileSync(filename, 'utf8'), context, { filename });
     return context.module.exports;

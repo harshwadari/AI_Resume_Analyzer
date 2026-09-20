@@ -7,7 +7,9 @@ import PrivateStateBoundary from '../src/features/auth/components/PrivateStateBo
 import { InterviewContext } from '../src/features/interview/interview.state';
 import { getMe } from '../src/services/auth.api';
 import { useAuth } from '../src/features/auth/hooks/useAuth';
-import { logout, register } from '../src/services/auth.api';
+import { logout, register, login, verifyOtp } from '../src/services/auth.api';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import GuestOnly from '../src/features/auth/components/GuestOnly';
 
 vi.mock('../src/services/auth.api', () => ({
   getMe: vi.fn(), logout: vi.fn(), login: vi.fn(), register: vi.fn(), verifyOtp: vi.fn(), resendOtp: vi.fn(),
@@ -103,6 +105,14 @@ test('401 notification clears user and private data', async () => {
   expect(element.querySelector('#report').textContent).toBe('empty');
 });
 
+test('temporary session-check failure on focus does not sign out a known user', async () => {
+  getMe.mockResolvedValue({ user: { id: 'A' } });
+  await mount();
+  getMe.mockRejectedValue({ response: { status: 503 } });
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  expect(element.querySelector('#user').textContent).toBe('A');
+});
+
 test('a late initial get-me response cannot replace a newer login', async () => {
   let resolve;
   getMe.mockImplementation(() => new Promise(done => { resolve = done; }));
@@ -120,4 +130,50 @@ test('legacy JWT storage is cleared and token URLs are never imported', async ()
   expect(sessionStorage.getItem('token')).toBe(null);
   expect(window.location.search).toBe('');
   expect(element.querySelector('#user').textContent).toBe('guest');
+});
+
+for (const action of ['login', 'otp']) {
+  test(`${action} confirms cookie session and shows success before navigating`, async () => {
+    vi.useFakeTimers();
+    const authenticated = { id: 'A' };
+    login.mockResolvedValue({ user: authenticated });
+    verifyOtp.mockResolvedValue({ user: authenticated });
+    function SignIn() {
+      const { handleLogin, handleVerifyOtp } = useAuth();
+      return <button id="submit" onClick={() => action === 'login'
+        ? handleLogin({ email: 'user@example.com', password: 'ExamplePass9' })
+        : handleVerifyOtp({ email: 'user@example.com', otp: '123456' })}>Submit</button>;
+    }
+    try {
+      await act(async () => root.render(<AuthProvider><PrivateStateBoundary><MemoryRouter initialEntries={['/login']}><Routes>
+        <Route path="/login" element={<GuestOnly><SignIn /></GuestOnly>} />
+        <Route path="/workspace" element={<p id="workspace">Workspace</p>} />
+      </Routes></MemoryRouter></PrivateStateBoundary></AuthProvider>));
+      getMe.mockResolvedValue({ user: authenticated });
+      await click('submit');
+      expect(element.querySelector('[role="status"]').textContent).toContain('You’re signed in!');
+      expect(element.querySelector('#workspace')).toBeNull();
+      await act(async () => vi.advanceTimersByTime(899));
+      expect(element.querySelector('#workspace')).toBeNull();
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(element.querySelector('#workspace')).not.toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+}
+
+test('blocked session cookie never produces authenticated state or success', async () => {
+  login.mockResolvedValue({ user: { id: 'A' } });
+  let result;
+  function SignIn() {
+    const { handleLogin, user, error } = useAuth();
+    return <><p id="user">{user?.id || 'guest'}</p><p id="error">{error}</p><button id="submit" onClick={async () => {
+      result = await handleLogin({ email: 'user@example.com', password: 'ExamplePass9' });
+    }}>Submit</button></>;
+  }
+  await act(async () => root.render(<AuthProvider><SignIn /></AuthProvider>));
+  getMe.mockRejectedValue({ response: { status: 401 } });
+  await click('submit');
+  expect(result.success).toBe(false);
+  expect(element.querySelector('#user').textContent).toBe('guest');
+  expect(element.querySelector('#error').textContent).toContain('session could not be confirmed');
 });

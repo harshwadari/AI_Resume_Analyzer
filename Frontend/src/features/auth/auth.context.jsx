@@ -8,15 +8,17 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [authSuccess, setAuthSuccess] = useState(false);
   const channel = useRef(null);
   const generation = useRef(0);
   const currentUser = useRef(null);
 
-  const setUser = useCallback(value => {
+  const setUser = useCallback((value, { celebrate = false } = {}) => {
     generation.current++;
     advanceSession();
     currentUser.current = value;
     updateUser(value);
+    setAuthSuccess(Boolean(value && celebrate));
     setInitialLoading(false);
     channel.current?.postMessage('changed');
   }, []);
@@ -50,9 +52,12 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (err) {
         if (active && revision === generation.current && epoch === sessionEpoch() && err.code !== 'ERR_CANCELED') {
-          currentUser.current = null;
-          advanceSession();
-          updateUser(null);
+          if (err.response?.status === 401) {
+            currentUser.current = null;
+            advanceSession();
+            updateUser(null);
+            setAuthSuccess(false);
+          }
           setInitialLoading(false);
           if (err.response?.status !== 401) setError('Unable to check your session. Please try again.');
         }
@@ -88,7 +93,7 @@ export const AuthProvider = ({ children }) => {
     };
   }, [setUser]);
 
-  return <AuthContext.Provider value={{ user, setUser, loading, setLoading, initialLoading, error, setError }}>
+  return <AuthContext.Provider value={{ user, setUser, loading, setLoading, initialLoading, error, setError, authSuccess, setAuthSuccess }}>
     {children}
   </AuthContext.Provider>;
 };

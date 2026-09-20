@@ -1,10 +1,20 @@
 import { useContext } from "react";
 import { AuthContext } from "../auth.state";
-import { login, logout, register, verifyOtp, resendOtp } from "../../../services/auth.api";
+import { login, logout, register, verifyOtp, resendOtp, getMe } from "../../../services/auth.api";
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
   const { user, setUser, loading, setLoading, initialLoading, error, setError } = context;
+
+  const confirmSession = async () => {
+    try {
+      const session = await getMe();
+      if (!session?.user) throw new Error('Missing session');
+      setUser(session.user, { celebrate: true });
+    } catch {
+      throw new Error('Your session could not be confirmed. Please check your connection and cookie settings, then sign in again.');
+    }
+  };
 
   const handleLogin = async ({ email, password }) => {
     try {
@@ -13,7 +23,7 @@ export const useAuth = () => {
       const data = await login({ email, password });
 
       if (data?.user) {
-        setUser(data.user);
+        await confirmSession();
         return { success: true };
       }
 
@@ -27,7 +37,7 @@ export const useAuth = () => {
         return { success: false, requiresVerification: true, email: errorData.email || email };
       }
 
-      setError(errorData?.message || "Unable to login right now");
+      setError(errorData?.message || err.message || "Unable to login right now");
       return { success: false };
     } finally {
       setLoading(false);
@@ -47,7 +57,7 @@ export const useAuth = () => {
 
       // Fallback: if somehow user is returned directly (shouldn't happen now)
       if (data?.user) {
-        setUser(data.user);
+        await confirmSession();
         return { success: true };
       }
 
@@ -67,13 +77,13 @@ export const useAuth = () => {
       const data = await verifyOtp({ email, otp });
 
       if (data?.user) {
-        setUser(data.user);
+        await confirmSession();
         return { success: true };
       }
 
       return { success: false };
     } catch (err) {
-      setError(err?.response?.data?.message || "OTP verification failed");
+      setError(err?.response?.data?.message || err.message || "OTP verification failed");
       return { success: false };
     } finally {
       setLoading(false);

@@ -33,6 +33,23 @@ async function sendEmail({ to, subject, html, replyTo }) {
     return info;
 }
 
+// Auth email can use HTTPS on hosts which block outbound SMTP. Contact mail
+// retains its existing transport. No automatic fallback can duplicate delivery.
+async function sendAuthEmail(message) {
+    if (!require('../config/email.config').emailConfigured(process.env)) throw new Error('Authentication email is not configured');
+    if (process.env.EMAIL_PROVIDER !== 'brevo') return sendEmail(message);
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST', signal: AbortSignal.timeout(15_000),
+        headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+            sender: { email: process.env.BREVO_FROM_EMAIL, name: process.env.BREVO_FROM_NAME || 'PrepWise AI' },
+            to: [{ email: message.to }], subject: message.subject, htmlContent: message.html,
+        }),
+    });
+    // Provider bodies may contain recipient details; never propagate them.
+    if (!response.ok) throw new Error('Authentication email delivery failed');
+}
+
 // ── OTP Verification Email ──────────────────────────────────────────────────
 async function sendOtpEmail(to, otp) {
     const html = `
@@ -50,7 +67,7 @@ async function sendOtpEmail(to, otp) {
         </div>
     `;
 
-    await sendEmail({
+    await sendAuthEmail({
         to,
         subject: "Verify Your Email - PrepWise AI",
         html,
@@ -76,7 +93,7 @@ async function sendResetPasswordEmail(to, resetUrl) {
         </div>
     `;
 
-    await sendEmail({
+    await sendAuthEmail({
         to,
         subject: "Reset Your Password - PrepWise AI",
         html,
@@ -106,7 +123,7 @@ async function sendGoogleAuthReminderEmail(to) {
         </div>
     `;
 
-    await sendEmail({
+    await sendAuthEmail({
         to,
         subject: "Google Login Reminder - PrepWise AI",
         html,

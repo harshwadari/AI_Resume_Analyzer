@@ -10,7 +10,8 @@ const VerifyOtp = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const storedEmail = localStorage.getItem("pendingVerificationEmail") || "";
+  let storedEmail = '';
+  try { storedEmail = localStorage.getItem("pendingVerificationEmail") || ''; } catch { /* Use route state when storage is disabled. */ }
   const email = location.state?.email || storedEmail;
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -26,7 +27,7 @@ const VerifyOtp = () => {
       return;
     }
 
-    localStorage.setItem("pendingVerificationEmail", email);
+    try { localStorage.setItem("pendingVerificationEmail", email); } catch { /* Optional storage. */ }
   }, [email, navigate]);
 
   // Countdown timer for resend button
@@ -84,8 +85,7 @@ const VerifyOtp = () => {
 
     const result = await handleVerifyOtp({ email, otp: otpString });
     if (result.success) {
-      localStorage.removeItem("pendingVerificationEmail");
-      navigate("/workspace");
+      try { localStorage.removeItem("pendingVerificationEmail"); } catch { /* Optional storage. */ }
     }
   };
 

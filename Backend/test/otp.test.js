@@ -2,6 +2,21 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./helpers');
 
+test('email failure invalidates only the undelivered OTP and reports service failure', async () => {
+    let cleared;
+    const service = load('src/services/verification.service.js', {
+        '../models/user.model': {
+            findOneAndUpdate: async () => ({ email: 'user@example.com' }),
+            updateOne: async (query, update) => { cleared = { query, update }; },
+        },
+        './email.service': { sendOtpEmail: async () => { throw new Error('provider failed'); } },
+    }, { JWT_SECRET: 'synthetic-test-key' });
+    await assert.rejects(service.issueOtp({ _id: 'user', email: 'user@example.com' }), { statusCode: 503 });
+    assert.equal(cleared.query._id, 'user');
+    assert.match(cleared.query.otpHash, /^[a-f0-9]{64}$/);
+    assert.equal(cleared.update.$set.otpHash, null);
+});
+
 test('OTP issuance stores a keyed hash, clears legacy plaintext, and enforces cooldown', async () => {
     let stored, delivered, query;
     const service = load('src/services/verification.service.js', {

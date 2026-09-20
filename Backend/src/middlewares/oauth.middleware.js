@@ -17,7 +17,9 @@ async function startGoogle(req, res, next) {
             linkUserId: req.oauthLinkUserId || null, linkVersion: req.oauthLinkVersion || 0,
         });
         res.cookie('oauth_browser', browser, { ...browserOptions(), maxAge: 5 * 60_000 });
-        passport.authenticate('google', { scope: ['profile', 'email'], session: false, state })(req, res, next);
+        // An existing Google session may otherwise silently select its account.
+        // Both the sign-in and explicit linking buttons promise account choice.
+        passport.authenticate('google', { scope: ['profile', 'email'], session: false, state, prompt: 'select_account' })(req, res, next);
     } catch { next(new AppError('Unable to start Google login', 503)); }
 }
 

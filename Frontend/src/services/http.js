@@ -1,9 +1,12 @@
 import axios from 'axios';
 import { sessionEpoch } from './session';
+import { resolveApiOrigin } from './api-base';
+
+export const apiOrigin = resolveApiOrigin(import.meta.env.VITE_API_URL, import.meta.env.PROD);
 
 export function createApiClient(options = {}) {
   const api = axios.create({
-    baseURL: (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, ''),
+    baseURL: apiOrigin,
     timeout: 120000,
     withCredentials: true,
     headers: { 'X-Requested-With': 'XMLHttpRequest' },

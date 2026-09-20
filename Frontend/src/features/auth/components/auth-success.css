@@ -1,0 +1,12 @@
+.auth-success-check {
+  stroke-dasharray: 32;
+  stroke-dashoffset: 0;
+  animation: auth-check 400ms ease-out both;
+}
+@keyframes auth-check {
+  from { stroke-dashoffset: 32; }
+  to { stroke-dashoffset: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-success-check { animation: none; }
+}

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const User = require('../models/user.model');
 const { generateOtp } = require('../utils/otp.utils');
 const { sendOtpEmail } = require('./email.service');
+const AppError = require('../utils/AppError');
 
 const MAX_ATTEMPTS = 5;
 const COOLDOWN_MS = 60_000;
@@ -27,7 +28,7 @@ async function issueOtp(user) {
         // Clear only our undelivered challenge, never a newer concurrent one.
         await User.updateOne({ _id: user._id, otpHash: hash }, { $set: { otpHash: null, otpExpiry: null } });
         console.error('Registration email delivery failed');
-        return false;
+        throw new AppError('Verification email could not be sent. Please retry shortly.', 503);
     }
     return true;
 }

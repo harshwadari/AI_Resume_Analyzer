@@ -83,7 +83,7 @@ npm install
 npm run dev
 ```
 
-The backend runs on `http://localhost:3000` by default.
+The backend runs on `http://localhost:3001` by default.
 
 ### Frontend
 
@@ -105,7 +105,7 @@ MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret
 GOOGLE_GEN_API_KEY=your_google_genai_api_key
 FRONTEND_URL=http://localhost:5173
-BACKEND_URL=http://localhost:3000
+BACKEND_URL=http://localhost:3001
 
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
@@ -122,7 +122,7 @@ BREVO_FROM_NAME=PrepWise AI
 Create a `.env` file inside `Frontend`:
 
 ```env
-VITE_API_URL=http://localhost:3000
+VITE_API_URL=http://localhost:3001
 ```
 
 ## Main API Routes

@@ -1,5 +1,11 @@
 # Authentication operations and verification
 
+For the current September 20 audit, deployment settings, verification results,
+and changed-file inventory, see [AUTH_AUDIT.md](AUTH_AUDIT.md). It supersedes the
+historical transport/deployment notes below: production now supports first-party
+Vercel proxy cookies, an explicit GOOGLE_CALLBACK_URL, and optional Brevo HTTPS
+authentication email. No new changes have been deployed during this audit.
+
 ## Local startup correction (2026-09-13)
 
 PrepWise now uses frontend http://localhost:5173 and backend

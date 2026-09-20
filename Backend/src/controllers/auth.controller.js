@@ -24,7 +24,7 @@ const signTokenAndSetCookie = (user, res, authMethod = "password") => {
 const { issueOtp: createAndSendVerificationOtp, consumeOtp } = require('../services/verification.service');
 
 const isEmailServiceConfigured = () => {
-    return Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+    return require('../config/email.config').emailConfigured(process.env);
 };
 
 const registerUserController = asyncHandler(async (req, res) => {
@@ -41,7 +41,12 @@ const registerUserController = asyncHandler(async (req, res) => {
         if (err.code === 11000) throw new AppError(duplicateMessage, 409);
         throw err;
     }
-    await createAndSendVerificationOtp(user);
+    try {
+        await createAndSendVerificationOtp(user);
+    } catch (err) {
+        if (err.statusCode !== 503) throw err;
+        throw new AppError('Your account is pending verification, but the email could not be sent. Please sign in to retry verification shortly.', 503);
+    }
     return res.status(200).json({
         success: true,
         requiresVerification: true,
@@ -73,7 +78,13 @@ const loginUserController = asyncHandler(async (req, res) => {
 
     // Block login if email is not verified
     if (!user.isVerified) {
-        await createAndSendVerificationOtp(user);
+        try {
+            await createAndSendVerificationOtp(user);
+        } catch (err) {
+            if (err.statusCode !== 503) throw err;
+            return res.status(503).json({ success: false, requiresVerification: true, email: user.email,
+                message: 'Verification email could not be sent. Please retry sending your code shortly.' });
+        }
 
         return res.status(403).json({
             success: false,
