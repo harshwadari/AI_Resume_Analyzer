@@ -2,6 +2,7 @@ import { ArrowLeft, LogOut, Sparkles } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import ThemeToggle from "../ui/ThemeToggle.jsx";
 import { useAuth } from "../../features/auth/hooks/useAuth";
+import DeleteAccount from '../../features/auth/components/DeleteAccount';
 
 const WorkspaceHeader = ({ title, subtitle, showBack = false }) => {
   const navigate = useNavigate();
@@ -43,9 +44,9 @@ const WorkspaceHeader = ({ title, subtitle, showBack = false }) => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <ThemeToggle />
-          <Link to="/link-google" className="text-sm">Link Google</Link>
+          <DeleteAccount />
 
           <button
             type="button"

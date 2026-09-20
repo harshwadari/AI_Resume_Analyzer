@@ -12,4 +12,5 @@ export const reauthenticate = (password) => post('/reauthenticate', { password }
 export const contact = (body) => post('/contact', body);
 export const getMe = async (options = {}) => (await api.get(base + '/get-me', { ...options, skipAuthNotification: true })).data;
 export const logout = () => post('/logout', {});
+export const deleteAccount = (confirmation) => post('/delete-account', { confirmation });
 export const getGoogleAuthUrl = (link = false) => base + '/google' + (link ? '/link' : '');

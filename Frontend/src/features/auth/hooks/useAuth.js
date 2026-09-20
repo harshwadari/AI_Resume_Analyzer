@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { AuthContext } from "../auth.state";
-import { login, logout, register, verifyOtp, resendOtp, getMe } from "../../../services/auth.api";
+import { login, logout, register, verifyOtp, resendOtp, getMe, deleteAccount } from "../../../services/auth.api";
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -123,7 +123,27 @@ export const useAuth = () => {
     }
   };
 
+  const handleDeleteAccount = async (confirmation) => {
+    setLoading(true);
+    try {
+      await deleteAccount(confirmation);
+      try {
+        localStorage.removeItem('pendingVerificationEmail');
+        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
+      } catch { /* Cookie auth does not depend on browser storage. */ }
+      setError(null);
+      setUser(null);
+      return { success: true };
+    } catch (err) {
+      return { success: false, message: err?.response?.data?.message || 'Could not confirm account deletion. Please try again.' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
+    handleDeleteAccount,
     user,
     loading,
     initialLoading,

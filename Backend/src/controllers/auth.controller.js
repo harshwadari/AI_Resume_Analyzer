@@ -218,7 +218,16 @@ const reauthenticateController = asyncHandler(async (req, res) => {
     res.json({ success: true });
 });
 
+const deleteAccountController = asyncHandler(async (req, res) => {
+    if (req.body?.confirmation !== 'DELETE') throw new AppError('Type DELETE to confirm permanent account deletion.', 400);
+    // The target always comes from the verified cookie, never a request-body ID.
+    await require('../services/account.service').deleteAccount(req.user.id);
+    require('../config/auth.config').clearAuthCookie(res);
+    res.json({ success: true, message: 'Your account and saved reports have been permanently deleted.' });
+});
+
 module.exports = {
+    deleteAccountController,
     reauthenticateController,
     registerUserController,
     loginUserController,

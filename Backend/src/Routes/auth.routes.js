@@ -10,6 +10,8 @@ const { registerSchema, loginSchema, verifyOtpSchema, resendOtpSchema, forgotPas
 
 const authRouter = Router()
 
+authRouter.post('/delete-account', authMiddleware.authUser, rateLimit('delete-account', { ip: 10, account: 0 }), authController.deleteAccountController);
+
 authRouter.post("/register", rateLimit("register", { ip: 30, account: 8 }), validate(registerSchema), authController.registerUserController)
 
 authRouter.post("/login", rateLimit("login", { ip: 30, account: 10 }), validate(loginSchema), authController.loginUserController)

@@ -24,8 +24,7 @@ async function generateInterviewReportController(req, res) {
         });
 
 
-        const interviewReport = await interviewReportModel.create({
-            user: req.user.id,
+        const interviewReport = await require('../services/account.service').saveReportForUser(req.user.id, {
             resume: resumeContent.text,
             selfDescription: selfDescription || "",
             jobDescription,
@@ -38,6 +37,7 @@ async function generateInterviewReportController(req, res) {
         })
     }
     catch (err) {
+        if (err.statusCode === 401) return res.status(401).json({ success: false, message: err.message });
         console.log(err)
         res.status(500).json({
             success: false,

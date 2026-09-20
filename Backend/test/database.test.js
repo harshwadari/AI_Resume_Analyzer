@@ -2,7 +2,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { response } = require('./helpers');
 
 // All credentials are synthetic. Never connect to the application's database.
@@ -26,7 +26,7 @@ let database;
 let server, apiBase;
 
 before(async () => {
-    database = await MongoMemoryServer.create();
+    database = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(database.getUri(), { dbName: 'authentication-tests' });
     await User.init();
     await require('../src/config/auth-indexes').ensureAuthIndexes();
@@ -56,6 +56,48 @@ async function request(path, { body, cookie, headers = {}, method = body === und
     return { status: res.status, headers: res.headers, body: raw.startsWith('{') ? JSON.parse(raw) : null };
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
+
+test('HTTP: deletion requires confirmation, removes only the signed-in account, and invalidates sessions', async () => {
+    const Report = require('../src/models/interviewReport.model');
+    const State = require('../src/models/oauthState.model');
+    const owner = await User.create({ username: 'delete-owner', email: 'delete@example.com', password: 'ExamplePass9', isVerified: true });
+    const other = await User.create({ username: 'delete-other', email: 'keep@example.com', password: 'ExamplePass9', isVerified: true });
+    await Report.create([{ user: owner.id, title: 'Private', jobDescription: 'Role', resume: 'Personal resume' },
+        { user: other.id, title: 'Keep', jobDescription: 'Role' }]);
+    await State.create({ _id: 'delete-link', browserHash: 'synthetic', linkUserId: owner.id, expiresAt: new Date(Date.now() + 60000) });
+    const login = await request('/api/auth/login', { body: { email: owner.email, password: 'ExamplePass9' } });
+    const cookie = cookieFrom(login);
+    assert.equal((await request('/api/auth/delete-account', { body: { confirmation: 'DELETE' } })).status, 401);
+    assert.equal((await request('/api/auth/delete-account', { body: {}, cookie })).status, 400);
+    assert.equal((await request('/api/auth/delete-account', { body: { confirmation: 'DELETE' }, cookie, headers: { Origin: 'https://untrusted.example' } })).status, 403);
+    assert.ok(await User.findById(owner.id));
+    const deleted = await request('/api/auth/delete-account', { cookie, body: { confirmation: 'DELETE', userId: other.id } });
+    assert.equal(deleted.status, 200);
+    assert.match(deleted.headers.get('set-cookie'), /token=;/);
+    assert.equal(await User.findById(owner.id), null);
+    assert.equal(await Report.countDocuments({ user: owner.id }), 0);
+    assert.equal(await State.countDocuments({ linkUserId: owner.id }), 0);
+    assert.ok(await User.findById(other.id));
+    assert.equal(await Report.countDocuments({ user: other.id }), 1);
+    assert.equal((await request('/api/auth/get-me', { cookie })).status, 401);
+    await assert.rejects(require('../src/services/account.service').saveReportForUser(owner.id, { title: 'Late result', jobDescription: 'Role' }), { statusCode: 401 });
+    assert.equal(await Report.countDocuments({ user: owner.id }), 0);
+});
+
+test('account deletion rolls back if related-data cleanup fails, including for Google-only accounts', async () => {
+    const Report = require('../src/models/interviewReport.model');
+    const owner = await User.create({ username: 'delete-google', email: 'delete-google@example.com', googleId: 'deletion-google', isVerified: true });
+    await Report.create({ user: owner.id, title: 'Keep on failure', jobDescription: 'Role' });
+    const original = Report.deleteMany;
+    try {
+        Report.deleteMany = async () => { throw new Error('Synthetic cleanup failure'); };
+        await assert.rejects(require('../src/services/account.service').deleteAccount(owner.id), /Synthetic cleanup failure/);
+    } finally { Report.deleteMany = original; }
+    assert.ok(await User.findById(owner.id));
+    assert.equal(await Report.countDocuments({ user: owner.id }), 1);
+    await require('../src/services/account.service').deleteAccount(owner.id);
+    assert.equal(await User.findById(owner.id), null);
+});
 
 test('HTTP: production cookie login, refresh and logout work with the first-party frontend origin', async () => {
     const original = { NODE_ENV: process.env.NODE_ENV, COOKIE_SAME_SITE: process.env.COOKIE_SAME_SITE,

@@ -1,5 +1,33 @@
 # Authentication operations and verification
 
+## Workspace account deletion
+
+The workspace header now offers Delete account instead of Link Google. The
+confirmation dialog requires typing DELETE and explains permanent removal.
+POST /api/auth/delete-account uses the existing cookie authentication, Origin/
+CSRF protection and rate limiting. The target account comes only from the
+authenticated session, never a client-provided user ID.
+
+Deletion removes the user document (including credentials, Google identity,
+OTP/reset metadata), all owned interview reports (including resume text), and
+pending OAuth linking records in one transaction. Other accounts are untouched.
+The response clears the cookie; deleted-user checks reject all existing sessions.
+The frontend clears private cached state and returns to the landing page only
+after success. Errors remain visible in the dialog so the operation can be retried.
+
+Report persistence also checks and writes the owner inside a transaction so a
+slow report generation cannot save personal data after account deletion.
+Transactions require a replica set or sharded MongoDB deployment (Atlas supports
+this); a standalone local mongod needs replica-set configuration. Test databases
+use an isolated single-node replica set. No live user data is touched by tests.
+Anonymous expiring rate-limit counters are not account records and retain their
+existing TTL. Provider email records and external backups are outside this app's
+database deletion. Google sign-in remains available; signing in again after
+deletion creates a new account, not a recovery of the old reports.
+
+Verification: 42 backend tests, 16 frontend tests, production build and focused
+frontend lint passed after this change. No live account was deleted.
+
 For the current September 20 audit, deployment settings, verification results,
 and changed-file inventory, see [AUTH_AUDIT.md](AUTH_AUDIT.md). It supersedes the
 historical transport/deployment notes below: production now supports first-party

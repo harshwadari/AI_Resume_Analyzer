@@ -7,12 +7,12 @@ import PrivateStateBoundary from '../src/features/auth/components/PrivateStateBo
 import { InterviewContext } from '../src/features/interview/interview.state';
 import { getMe } from '../src/services/auth.api';
 import { useAuth } from '../src/features/auth/hooks/useAuth';
-import { logout, register, login, verifyOtp } from '../src/services/auth.api';
+import { logout, register, login, verifyOtp, deleteAccount } from '../src/services/auth.api';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import GuestOnly from '../src/features/auth/components/GuestOnly';
 
 vi.mock('../src/services/auth.api', () => ({
-  getMe: vi.fn(), logout: vi.fn(), login: vi.fn(), register: vi.fn(), verifyOtp: vi.fn(), resendOtp: vi.fn(),
+  getMe: vi.fn(), logout: vi.fn(), login: vi.fn(), register: vi.fn(), verifyOtp: vi.fn(), resendOtp: vi.fn(), deleteAccount: vi.fn(),
 }));
 let root, element;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -28,7 +28,7 @@ afterEach(async () => { await act(async () => root.unmount()); element.remove();
 function Probe() {
   const { user, setUser, initialLoading } = useContext(AuthContext);
   const { report, setReport } = useContext(InterviewContext);
-  const { handleLogout } = useAuth();
+  const { handleLogout, handleDeleteAccount } = useAuth();
   return <>
     <div id="user">{initialLoading ? 'loading' : user?.id || 'guest'}</div>
     <div id="report">{report?.title || 'empty'}</div>
@@ -36,6 +36,7 @@ function Probe() {
     <button id="b" onClick={() => setUser({ id: 'B' })}>B</button>
     <button id="save" onClick={() => setReport({ title: 'private resume' })}>Save</button>
     <button id="logout" onClick={handleLogout}>Logout</button>
+    <button id="delete" onClick={() => handleDeleteAccount('DELETE')}>Delete</button>
   </>;
 }
 const mount = () => act(async () => root.render(<AuthProvider><PrivateStateBoundary><Probe /></PrivateStateBoundary></AuthProvider>));
@@ -74,6 +75,19 @@ test('logout failure still clears user and private cached data', async () => {
   await click('a');
   await click('save');
   await click('logout');
+  expect(element.querySelector('#user').textContent).toBe('guest');
+  expect(element.querySelector('#report').textContent).toBe('empty');
+});
+
+test('account deletion clears private state only after the server confirms success', async () => {
+  await mount(); await click('a'); await click('save');
+  deleteAccount.mockRejectedValue(new Error('offline'));
+  await click('delete');
+  expect(element.querySelector('#user').textContent).toBe('A');
+  expect(element.querySelector('#report').textContent).toBe('private resume');
+  deleteAccount.mockResolvedValue({ success: true });
+  await click('delete');
+  expect(deleteAccount).toHaveBeenLastCalledWith('DELETE');
   expect(element.querySelector('#user').textContent).toBe('guest');
   expect(element.querySelector('#report').textContent).toBe('empty');
 });
