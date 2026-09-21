@@ -13,11 +13,25 @@ import Interview from "./features/interview/pages/Interview.jsx";
 import Dashboard from './features/dashboard/pages/Dashboard.jsx';
 import Recruiter from './features/dashboard/pages/Recruiter.jsx';
 import AuthRedirect from './features/auth/pages/AuthRedirect.jsx';
+import RecruiterLayout from './features/recruiter/components/RecruiterLayout.jsx';
+import RecruiterPlaceholder from './features/recruiter/pages/RecruiterPlaceholder.jsx';
+import NewAnalysis from './features/recruiter/pages/NewAnalysis.jsx';
+import AnalysisOverview from './features/recruiter/pages/AnalysisOverview.jsx';
 
 export const router = createBrowserRouter([
   { path: '/auth/success', element: <Protected><AuthRedirect /></Protected> },
   { path: '/dashboard', element: <Protected><Dashboard /></Protected> },
-  { path: '/recruiter', element: <Protected><Recruiter /></Protected> },
+  {
+    path: '/recruiter',
+    element: <Protected><RecruiterLayout /></Protected>,
+    children: [
+      { index: true, element: <Recruiter /> },
+      { path: 'analysis/new', element: <NewAnalysis /> },
+      { path: 'analysis/:analysisId', element: <AnalysisOverview /> },
+      { path: 'analysis/:analysisId/candidates', element: <RecruiterPlaceholder title="Candidates and results" description="Ranked candidates and supporting evidence will appear here when results are available." /> },
+      { path: 'analysis/:analysisId/chat', element: <RecruiterPlaceholder title="Analysis chat" description="Questions about this analysis will be available here in a future checkpoint." /> },
+    ],
+  },
   { path: "/link-google", element: <Protected><LinkGoogle /></Protected> },
   {
     path: "/",

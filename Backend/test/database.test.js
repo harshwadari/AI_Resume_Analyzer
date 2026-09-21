@@ -57,6 +57,62 @@ async function request(path, { body, cookie, headers = {}, method = body === und
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
 
+test('HTTP: recruiter JD creation preserves original text and isolates ownership', async () => {
+    const Analysis = require('../src/models/analysis.model');
+    const owner = await User.create({ username: 'jd-owner', email: 'jd-owner@example.com', password: 'ExamplePass9', isVerified: true });
+    const other = await User.create({ username: 'jd-other', email: 'jd-other@example.com', password: 'ExamplePass9', isVerified: true });
+    const cookieFor = user => 'token=' + require('jsonwebtoken').sign({ id: user.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,
+        { algorithm: 'HS256', issuer: 'prepwise', audience: 'prepwise-web', expiresIn: '1h' });
+    const cookie = cookieFor(owner);
+    const path = '/api/recruiter/analyses';
+    const rawJDText = '  Senior Engineer\r\n\r\nBuild reliable Node.js services, review code, and collaborate with product teams. Experience with MongoDB and API design required.\n  ';
+    assert.equal((await request(path, { body: { rawJDText } })).status, 401);
+    assert.equal((await request(path, { cookie, body: { rawJDText }, headers: { Origin: 'https://attacker.example' } })).status, 403);
+    for (const text of ['', ' '.repeat(150), 'x'.repeat(99), 'x'.repeat(20001)]) {
+        assert.equal((await request(path, { cookie, body: { rawJDText: text } })).status, 400);
+    }
+    assert.equal((await request(path, { cookie, body: { rawJDText, recruiter: other.id } })).status, 400);
+    assert.equal((await request(path, { cookie, body: { rawJDText, status: 'completed' } })).status, 400);
+    assert.equal((await request(path, { cookie, body: { rawJDText: 'x'.repeat(150000) } })).status, 413);
+    assert.equal(await Analysis.countDocuments({ recruiter: owner.id }), 0);
+
+    const created = await request(path, { cookie, body: { rawJDText } });
+    assert.equal(created.status, 201);
+    const record = created.body.analysis;
+    assert.match(record.id, /^[a-f0-9]{24}$/);
+    assert.equal(record.recruiter, owner.id);
+    assert.equal(record.sourceType, 'text');
+    assert.equal(record.status, 'draft');
+    assert.equal(record.rawJDText, rawJDText);
+    assert.equal((await Analysis.findById(record.id)).rawJDText, rawJDText);
+    const fetched = await request(`${path}/${record.id}`, { cookie });
+    assert.equal(fetched.status, 200);
+    assert.equal(fetched.body.analysis.rawJDText, rawJDText);
+    assert.equal(fetched.headers.get('cache-control'), 'no-store');
+    assert.equal((await request(`${path}/${record.id}`, { cookie: cookieFor(other) })).status, 404);
+    assert.equal((await request(`${path}/invalid`, { cookie })).status, 404);
+    assert.equal((await request(`${path}/${record.id}`)).status, 401);
+    // Immutable fields survive ordinary document and query updates.
+    await Analysis.updateOne({ _id: record.id }, { $set: { rawJDText: 'replacement '.repeat(12), recruiter: other.id } });
+    const stored = await Analysis.findById(record.id);
+    stored.rawJDText = 'another replacement '.repeat(10);
+    await stored.save();
+    assert.equal((await Analysis.findById(record.id)).rawJDText, rawJDText);
+    assert.equal(String((await Analysis.findById(record.id)).recruiter), owner.id);
+    await assert.rejects(Analysis.replaceOne({ _id: record.id }, { recruiter: owner.id, rawJDText: 'replacement '.repeat(12) }), /replacement is not allowed/);
+    // Valid Unicode maximum exceeds the legacy 32 KB JSON parser allowance.
+    const unicode = '界'.repeat(20000);
+    const large = await request(path, { cookie, body: { rawJDText: unicode } });
+    assert.equal(large.status, 201);
+    assert.equal((await Analysis.findById(large.body.analysis.id)).rawJDText, unicode);
+    assert.equal((await request(path, { cookie, body: { rawJDText: 'x'.repeat(100) } })).status, 201);
+    await User.deleteOne({ _id: owner.id });
+    const count = await Analysis.countDocuments({ recruiter: owner.id });
+    await assert.rejects(require('../src/services/analysis.service').createAnalysis(owner.id, rawJDText), { statusCode: 401 });
+    assert.equal(await Analysis.countDocuments({ recruiter: owner.id }), count);
+    assert.equal((await request(`${path}/${record.id}`, { cookie })).status, 401);
+});
+
 test('HTTP: deletion requires confirmation, removes only the signed-in account, and invalidates sessions', async () => {
     const Report = require('../src/models/interviewReport.model');
     const State = require('../src/models/oauthState.model');

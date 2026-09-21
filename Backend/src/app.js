@@ -6,6 +6,7 @@ const multer = require("multer");
 const helmet = require("helmet");
 const authRouter = require("./Routes/auth.routes");
 const interviewRouter = require("./Routes/interview.routes");
+const recruiterRouter = require('./Routes/recruiter.routes');
 const cors = require("cors");
 const AppError = require("./utils/AppError");
 const passport = require("passport");
@@ -20,6 +21,13 @@ app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 0));
 app.use(helmet());
 app.use(passport.initialize());
 
+// Scope the larger JSON allowance to recruiter input. Existing APIs retain 32 KB.
+// 20,000 characters can exceed 32 KB in UTF-8 or when JSON-escaped.
+app.use('/api/recruiter', express.json({ limit: '128kb' }), (err, req, res, next) => {
+    if (err.type === 'entity.too.large') return res.status(413).json({ success: false, message: 'Job description request is too large.' });
+    if (err.type === 'entity.parse.failed') return res.status(400).json({ success: false, message: 'Invalid JSON request.' });
+    next(err);
+});
 app.use(express.json({ limit: "32kb" }));
 app.use(cookieParser());
 app.use(cors({
@@ -38,6 +46,7 @@ app.use(cors({
 app.use("/api", (req, res, next) => { res.set("Cache-Control", "no-store"); next(); }, csrfGuard);
 app.use("/api/auth", authRouter);
 app.use("/api/interview", interviewRouter);
+app.use('/api/recruiter', recruiterRouter);
 
 // ── Health check — ping this every 14 min via cron-job.org to keep Render warm ──
 app.get("/health", (req, res) => {
