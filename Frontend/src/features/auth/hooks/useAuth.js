@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { AuthContext } from "../auth.state";
 import { login, logout, register, verifyOtp, resendOtp, getMe, deleteAccount } from "../../../services/auth.api";
+import { applyProfilePreferences, saveProfilePreferences } from '../profilePreferences';
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -142,8 +143,18 @@ export const useAuth = () => {
     }
   };
 
+  const updateProfile = (preferences) => {
+    if (!user?.id) return { success: false, message: 'You must be signed in to update your profile.' };
+    try {
+      const saved = saveProfilePreferences(user.id, preferences);
+      setUser(applyProfilePreferences({ ...user, ...preferences }));
+      return { success: true, preferences: saved };
+    } catch (err) { return { success: false, message: err.message }; }
+  };
+
   return {
     handleDeleteAccount,
+    updateProfile,
     user,
     loading,
     initialLoading,

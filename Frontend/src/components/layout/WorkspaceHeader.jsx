@@ -1,39 +1,29 @@
-import { ArrowLeft, LogOut, Sparkles } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
-import ThemeToggle from "../ui/ThemeToggle.jsx";
-import { useAuth } from "../../features/auth/hooks/useAuth";
-import DeleteAccount from '../../features/auth/components/DeleteAccount';
+import { ArrowLeft, Sparkles } from "lucide-react";
+import { Link } from "react-router-dom";
+import ProfileMenu from './ProfileMenu.jsx';
 
 const WorkspaceHeader = ({ title, subtitle, showBack = false, backTo = '/workspace', badge = 'Interview workspace' }) => {
-  const navigate = useNavigate();
-  const { handleLogout, loading } = useAuth();
-
-  const onLogout = async () => {
-    const result = await handleLogout();
-    navigate(result.success ? "/" : "/login", { state: { logoutFailed: !result.success } });
-  };
-
   return (
-    <header className="glass-panel mb-8 rounded-[28px] px-6 py-5 sm:px-7">
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-4">
+    <header className="glass-panel relative z-20 mb-8 rounded-[28px] px-6 py-5 sm:px-7">
+      <div className="flex items-start justify-between gap-3 sm:gap-5">
+        <div className="flex min-w-0 items-start gap-3 sm:gap-4">
           {showBack && (
             <Link
               to={backTo}
               aria-label={backTo === '/dashboard' ? 'Back to dashboard selection' : 'Back to workspace'}
-              className="mt-1 flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200/60 bg-white/80 text-slate-700 backdrop-blur-md transition hover:bg-white dark:border-white/10 dark:bg-slate-800/80 dark:text-blue-400 dark:hover:bg-slate-800"
+              className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200/60 bg-white/80 text-slate-700 backdrop-blur-md transition hover:bg-white dark:border-white/10 dark:bg-slate-800/80 dark:text-blue-400 dark:hover:bg-slate-800"
             >
               <ArrowLeft size={18} />
             </Link>
           )}
 
-          <div>
+          <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-blue-200/40 bg-blue-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-blue-600 backdrop-blur-md dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-400">
               <Sparkles size={14} className="text-blue-500 dark:text-blue-400" />
               {badge}
             </div>
 
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
+            <h1 className="mt-4 break-words text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
               {title}
             </h1>
 
@@ -45,23 +35,7 @@ const WorkspaceHeader = ({ title, subtitle, showBack = false, backTo = '/workspa
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <ThemeToggle />
-          <DeleteAccount />
-
-          <button
-            type="button"
-            onClick={onLogout}
-            disabled={loading}
-            className="group inline-flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white/80 px-5 py-2.5 text-sm font-medium text-slate-700 backdrop-blur-md transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70 dark:border-blue-500/20 dark:bg-slate-800/80 dark:text-white dark:hover:bg-blue-500/10"
-          >
-            <LogOut
-              size={16}
-              className="text-slate-600 dark:text-blue-400"
-            />
-            Logout
-          </button>
-        </div>
+        <ProfileMenu />
       </div>
     </header>
   );

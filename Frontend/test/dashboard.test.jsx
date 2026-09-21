@@ -209,7 +209,10 @@ test.each([
   expect(element.querySelector('#recruiter-page-title')?.textContent).toBe(heading);
   expect(element.querySelectorAll('nav[aria-label="Recruiter navigation"]')).toHaveLength(1);
   expect(element.querySelectorAll('header')).toHaveLength(1);
-  expect(element.textContent).toContain('Logout');
+  expect(element.querySelector('button[aria-label="Open profile menu"]')).not.toBeNull();
+  await act(async () => element.querySelector('button[aria-label="Open profile menu"]').click());
+  expect(element.querySelector('a[href="/profile"]')?.textContent).toContain('Profile');
+  expect(element.querySelector('a[href="/recruiter/settings"]')?.textContent).toContain('Settings');
 });
 
 test('recruiter navigation keeps the selected analysis when switching results and chat', async () => {
@@ -232,6 +235,9 @@ test('recruiter navigation keeps the selected analysis when switching results an
 test('logout from a recruiter child route uses existing authentication and blocks reentry', async () => {
   logout.mockResolvedValue({ success: true });
   await mount('/recruiter/analysis/example/chat');
+  await act(async () => element.querySelector('button[aria-label="Open profile menu"]').click());
+  await clickLink('a[href="/recruiter/settings"]');
+  expect(element.textContent).toContain('Account settings');
   const logoutButton = [...element.querySelectorAll('button')].find(button => button.textContent.trim() === 'Logout');
   await act(async () => logoutButton.click());
   expect(logout).toHaveBeenCalledTimes(1);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthContext } from './auth.state';
 import { getMe } from '../../services/auth.api';
 import { advanceSession, sessionEpoch } from '../../services/session';
+import { applyProfilePreferences } from './profilePreferences';
 
 export const AuthProvider = ({ children }) => {
   const [user, updateUser] = useState(null);
@@ -16,8 +17,9 @@ export const AuthProvider = ({ children }) => {
   const setUser = useCallback((value, { celebrate = false } = {}) => {
     generation.current++;
     advanceSession();
-    currentUser.current = value;
-    updateUser(value);
+    const nextUser = applyProfilePreferences(value);
+    currentUser.current = nextUser;
+    updateUser(nextUser);
     setAuthSuccess(Boolean(value && celebrate));
     setInitialLoading(false);
     channel.current?.postMessage('changed');
@@ -44,7 +46,7 @@ export const AuthProvider = ({ children }) => {
       try {
         const data = await getMe({ signal: controller.signal });
         if (active && revision === generation.current && epoch === sessionEpoch()) {
-          const nextUser = data.user || null;
+          const nextUser = applyProfilePreferences(data.user || null);
           if (currentUser.current?.id !== nextUser?.id) advanceSession();
           currentUser.current = nextUser;
           updateUser(nextUser);

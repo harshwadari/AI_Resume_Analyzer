@@ -3,6 +3,7 @@ import { ArrowRight, BrainCircuit, CheckCircle2, FileDown, MoonStar, ShieldCheck
 import { Link } from "react-router-dom";
 import heroImage from "../../../assets/Product_logo.png";
 import ThemeToggle from "../../../components/ui/ThemeToggle.jsx";
+import ProfileMenu from '../../../components/layout/ProfileMenu.jsx';
 import { useAuth } from "../../auth/hooks/useAuth";
 import { contact } from "../../../services/auth.api";
 
@@ -95,9 +96,9 @@ const Landing = () => {
               <a href="#features" className="rounded-full bg-white/22 px-3 py-2 backdrop-blur-xl transition hover:bg-white/35 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]">Features</a>
               <a href="#workflow" className="rounded-full bg-white/22 px-3 py-2 backdrop-blur-xl transition hover:bg-white/35 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]">Workflow</a>
               <a href="#contact" className="rounded-full bg-white/22 px-3 py-2 backdrop-blur-xl transition hover:bg-white/35 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]">Contact</a>
-              <div className="rounded-full bg-white/20 p-1 backdrop-blur-xl dark:bg-white/[0.05]">
+              {!user && <div className="rounded-full bg-white/20 p-1 backdrop-blur-xl dark:bg-white/[0.05]">
                 <ThemeToggle />
-              </div>
+              </div>}
               <Link
                 to={user ? "/dashboard" : "/login"}
                 className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 dark:bg-white dark:text-slate-950"
@@ -105,6 +106,7 @@ const Landing = () => {
                 {initialLoading ? "Loading..." : user ? "Open dashboard" : "Login"}
                 <ArrowRight size={16} />
               </Link>
+              {user && <ProfileMenu />}
             </nav>
           </div>
         </header>

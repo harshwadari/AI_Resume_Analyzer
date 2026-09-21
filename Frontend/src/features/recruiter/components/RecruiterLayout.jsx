@@ -22,7 +22,7 @@ export default function RecruiterLayout() {
           <NavLink to={`${analysisPath}/candidates`} className={navigationStyle}>Candidates / results</NavLink>
           <NavLink to={`${analysisPath}/chat`} className={navigationStyle}>Chat</NavLink>
         </> : <button type="button" disabled title="Open an analysis to view its candidates and results" className={`${linkStyle} cursor-not-allowed opacity-50`}>Candidates / results</button>}
-        <button type="button" disabled className={`${linkStyle} cursor-not-allowed opacity-50`}>Settings (coming soon)</button>
+        <NavLink to="/recruiter/settings" className={navigationStyle}>Settings</NavLink>
       </nav>
       <Outlet />
     </div>
