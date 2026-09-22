@@ -46,7 +46,7 @@ function SavedAnalysis({ analysisId }) {
       <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-3">
         <div><dt className="text-slate-500 dark:text-slate-400">Analysis ID</dt><dd className="mt-1 break-all">{state.analysis.id}</dd></div>
         <div><dt className="text-slate-500 dark:text-slate-400">Source type</dt><dd className="mt-1">{state.analysis.sourceType}</dd></div>
-        <div><dt className="text-slate-500 dark:text-slate-400">Status</dt><dd className="mt-1">Draft · processing not started</dd></div>
+        <div><dt className="text-slate-500 dark:text-slate-400">Status</dt><dd className="mt-1">Draft · resume processing shown below</dd></div>
       </dl>
       <RequirementsReview key={state.analysis.id} analysis={state.analysis} />
       <ResumeUploads key={`resumes-${state.analysis.id}`} analysisId={state.analysis.id} />

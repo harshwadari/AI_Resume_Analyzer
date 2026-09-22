@@ -27,3 +27,7 @@ export const uploadResumeZip = async (analysisId, file, options = {}) => {
   const form = new FormData(); form.append('archive', file);
   return (await api.post(`/api/recruiter/analyses/${encodeURIComponent(analysisId)}/resumes/zip`, form, options)).data;
 };
+export const startResumeProcessing = async (analysisId, retryFailed = false, options = {}) =>
+  (await api.post(`/api/recruiter/analyses/${encodeURIComponent(analysisId)}/processing`, { retryFailed }, options)).data.job;
+export const getProcessingProgress = async (analysisId, options = {}) =>
+  (await api.get(`/api/recruiter/analyses/${encodeURIComponent(analysisId)}/processing`, options)).data.job;

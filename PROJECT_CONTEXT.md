@@ -8,7 +8,7 @@ Saved on 2026-09-21 from the user's architecture message and attached recruiter 
 - Implement only the requested phase/task, then run appropriate checks and explain the result.
 - The user verifies each increment before authorizing the next implementation.
 - Do not build the complete architecture at once or advance through phases automatically.
-- Current checkpoint: Checkpoints 9 and 10 add bounded folder/ZIP resume ingestion and align the JD PDF picker styling. See `CHECKPOINT_9_10.md` for limits, APIs, verification and remaining boundaries. Python startup remains documented in `ai-service/README.md`. Wait for user verification and an explicit next-checkpoint request.
+- Current checkpoint: Checkpoint 11 is implemented and locally verified. A 100-PDF batch passed with real Redis 8.2.10, Celery and isolated MongoDB, including Redis queue persistence, a worker restart, maximum concurrency two, individual failures and retry. Frontend progress tests, all regression tests and the build pass; unrelated baseline lint errors remain. See `CHECKPOINT_11.md` for evidence, scope and all changed files. Python startup and worker commands are documented in `ai-service/README.md`. Wait for user verification and an explicit next-checkpoint request.
 
 ## Product direction
 

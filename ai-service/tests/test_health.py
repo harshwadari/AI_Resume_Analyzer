@@ -20,6 +20,7 @@ class HealthTests(unittest.TestCase):
             for headers in [{}, {'X-AI-Service-Token': 'wrong'}]:
                 self.assertEqual(client.get('/health', headers=headers).status_code, 401)
                 self.assertEqual(client.post('/v1/jd/extract', headers=headers, json={'rawJDText': 'x' * 100}).status_code, 401)
+                self.assertEqual(client.post('/v1/jobs', headers=headers, json={'jobId': 'a' * 24}).status_code, 401)
             response = client.get('/health', headers={'X-AI-Service-Token': token})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json(), {'status': 'ok', 'service': 'prepwise-ai'})

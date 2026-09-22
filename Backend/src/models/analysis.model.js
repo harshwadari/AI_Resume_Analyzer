@@ -16,6 +16,7 @@ const schema = new mongoose.Schema({
     modelName: String,
     extractedAt: Date,
     requirementsReviewedAt: Date,
+    processingJobId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProcessingJob' },
     status: { type: String, enum: ['draft'], default: 'draft', required: true },
 }, { timestamps: true });
 

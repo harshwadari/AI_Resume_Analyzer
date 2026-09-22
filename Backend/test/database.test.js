@@ -62,6 +62,132 @@ async function request(path, { body, cookie, headers = {}, method = body === und
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
 
+test('Checkpoint 11: upload 100 PDFs through HTTP, queue, process, poll 0/100 to 100/100, isolate failures and retry', { skip: process.env.CHECKPOINT11_QUEUE_TEST !== '1', timeout: 240000 }, async () => {
+    const net = require('node:net'), path = require('node:path');
+    const fs = require('node:fs/promises');
+    const Resume = require('../src/models/resume.model');
+    const Job = require('../src/models/processingJob.model');
+    await Job.init();
+    const socket = net.createServer();
+    await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve));
+    const port = socket.address().port;
+    await new Promise(resolve => socket.close(resolve));
+    const savedUrl = process.env.AI_SERVICE_URL, savedToken = process.env.AI_SERVICE_TOKEN;
+    process.env.AI_SERVICE_URL = `http://127.0.0.1:${port}`;
+    process.env.AI_SERVICE_TOKEN = crypto.randomBytes(32).toString('hex');
+    const aiDir = path.resolve(__dirname, '../../ai-service');
+    const child = require('node:child_process').spawn(process.env.TEST_PYTHON || path.join(aiDir, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'), ['-m', 'tests.queue_harness'], {
+        cwd: aiDir, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, MONGO_URI: database.getUri(), MONGO_DB_NAME: 'authentication-tests', TEST_AI_PORT: String(port) },
+    });
+    let output = '', errors = '', spawnError;
+    child.stdout.on('data', data => { output += data; });
+    child.stderr.on('data', data => { errors = (errors + data).slice(-8000); });
+    child.on('error', error => { spawnError = error; });
+    const waitFor = async condition => {
+        const deadline = Date.now() + 150000;
+        while (!await condition()) {
+            if (spawnError) throw spawnError;
+            if (errors.includes('CRITICAL')) throw new Error(`Worker failed: ${errors}`);
+            if (child.exitCode !== null) throw new Error(`Worker exited: ${errors}`);
+            if (Date.now() > deadline) throw new Error(`Queue verification timed out: ${errors}`);
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    };
+    try {
+        await waitFor(() => output.includes('HARNESS_READY'));
+        console.log(`Queue test: private API and ${process.env.TEST_REDIS_SERVER ? 'real Redis broker' : 'Redis-compatible test broker'} ready.`);
+        const owner = await User.create({ username: 'queue-owner', email: 'queue-owner@example.com', password: 'ExamplePass9', isVerified: true });
+        const other = await User.create({ username: 'queue-other', email: 'queue-other@example.com', password: 'ExamplePass9', isVerified: true });
+        const cookieFor = user => 'token=' + require('jsonwebtoken').sign({ id: user.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,
+            { algorithm: 'HS256', issuer: 'prepwise', audience: 'prepwise-web', expiresIn: '1h' });
+        const cookie = cookieFor(owner);
+        const created = await request('/api/recruiter/analyses', { cookie, body: { rawJDText: 'Queue verification JD: build reliable Node.js services, review code, write tests and collaborate with the product team on MongoDB applications.' } });
+        const analysisId = created.body.analysis.id, endpoint = `/api/recruiter/analyses/${analysisId}/processing`;
+        const zip = require('./zip-fixture')(Array.from({ length: 100 }, (_, i) => ({ name: `${i}.pdf`, data: require('./pdf-fixture')() })));
+        const form = new FormData(); form.append('archive', new Blob([zip], { type: 'application/zip' }), 'hundred.zip');
+        const uploaded = await fetch(`${apiBase}/api/recruiter/analyses/${analysisId}/resumes/zip`, { method: 'POST', body: form,
+            headers: { Cookie: cookie, Origin: process.env.FRONTEND_URL, 'X-Requested-With': 'XMLHttpRequest' } });
+        assert.equal(uploaded.status, 201);
+        assert.equal((await uploaded.json()).resumes.length, 100);
+        console.log('Queue test: 100 PDFs uploaded.');
+        assert.equal((await request(endpoint, { body: {} })).status, 401);
+        assert.equal((await request(endpoint, { cookie: cookieFor(other), body: {} })).status, 404);
+        assert.equal((await request(endpoint, { cookie, body: { retryFailed: 'yes' } })).status, 400);
+        const starts = await Promise.all([request(endpoint, { cookie, body: {} }), request(endpoint, { cookie, body: {} })]);
+        starts.forEach(result => assert.equal(result.status, 202, JSON.stringify(result.body)));
+        assert.equal(starts[0].body.job.id, starts[1].body.job.id);
+        assert.equal(await Job.countDocuments({ analysis: analysisId }), 1);
+        assert.equal(starts[0].body.job.completed, 0); assert.equal(starts[0].body.job.total, 100);
+        console.log('Queue test: durable job at 0/100; starting worker.');
+        if (process.env.TEST_REDIS_SERVER) {
+            child.stdin.write('restart-broker\n');
+            await waitFor(() => output.includes('REDIS_RESTARTED'));
+            console.log('Queue test: real Redis restarted with queued tasks persisted.');
+        }
+        child.stdin.write('start\n');
+        await waitFor(() => output.includes('WORKER_READY'));
+        let last = 0, maxProcessing = 0, lastReport = 0, restartedWorker = false;
+        const observed = new Set([0]);
+        await waitFor(async () => {
+            const progress = (await request(endpoint, { cookie })).body.job;
+            if (Date.now() - lastReport > 10000) {
+                console.log(`Queue test: ${progress.completed}/100; active=${progress.processing}; queued=${progress.queued}; failed=${progress.failed}`);
+                lastReport = Date.now();
+            }
+            assert.ok(progress.completed >= last);
+            if (Math.floor(progress.completed / 25) > Math.floor(last / 25)) console.log(`Queue test: ${progress.completed}/100 complete.`);
+            last = progress.completed; observed.add(last);
+            maxProcessing = Math.max(maxProcessing, progress.processing);
+            assert.ok(progress.processing <= 2, 'worker concurrency must remain at most two');
+            if (process.env.TEST_REDIS_SERVER && !restartedWorker && last >= 30 && last < 100) {
+                restartedWorker = true;
+                child.stdin.write('restart-worker\n');
+                await waitFor(() => output.split('WORKER_READY').length >= 3);
+                console.log('Queue test: worker restarted during the batch.');
+            }
+            return last === 100;
+        });
+        assert.ok(observed.size > 2, 'must observe intermediate progress');
+        assert.ok(maxProcessing > 0);
+        const rows = await Resume.find({ analysis: analysisId }).select('+rawText +storageReference');
+        assert.ok(rows.every(row => row.processingStatus === 'PROCESSED' && row.attempts === 1 && row.rawText.includes('Senior Engineer')));
+        for (const row of rows) await fs.access(path.join(process.env.RESUME_STORAGE_DIR, row.storageReference));
+        assert.equal((await request(endpoint, { cookie: cookieFor(other) })).status, 404);
+        // A readable PDF with no text must be identified by filename as a failure.
+        const blank = new FormData(); blank.append('resumes', new Blob([require('./pdf-fixture')('')], { type: 'application/pdf' }), 'empty-resume.pdf');
+        const added = await fetch(`${apiBase}/api/recruiter/analyses/${analysisId}/resumes`, { method: 'POST', body: blank,
+            headers: { Cookie: cookie, Origin: process.env.FRONTEND_URL, 'X-Requested-With': 'XMLHttpRequest' } });
+        assert.equal(added.status, 201);
+        const aiClient = require('../src/services/ai-client.service');
+        const sendToAI = aiClient.request;
+        let newJob;
+        try {
+            aiClient.request = async () => { throw new Error('queue unavailable'); };
+            newJob = await request(endpoint, { cookie, body: {} });
+            assert.equal(newJob.status, 202); assert.ok(newJob.body.job.dispatchError);
+        } finally { aiClient.request = sendToAI; }
+        assert.notEqual(newJob.body.job.id, starts[0].body.job.id); assert.equal(newJob.body.job.total, 1);
+        const recovered = await request(endpoint, { cookie, body: {} });
+        assert.equal(recovered.body.job.id, newJob.body.job.id);
+        await waitFor(async () => (await request(endpoint, { cookie })).body.job.failed === 1);
+        const page = (await request(`/api/recruiter/analyses/${analysisId}/resumes?page=3`, { cookie })).body;
+        assert.equal(page.resumes[0].originalFilename, 'empty-resume.pdf');
+        assert.equal(page.resumes[0].processingStatus, 'FAILED'); assert.ok(page.resumes[0].processingError);
+        const retried = await request(endpoint, { cookie, body: { retryFailed: true } });
+        assert.equal(retried.body.job.total, 1); assert.notEqual(retried.body.job.id, newJob.body.job.id);
+        await waitFor(async () => (await request(endpoint, { cookie })).body.job.failed === 1);
+        assert.equal(await Resume.countDocuments({ analysis: analysisId, processingStatus: 'PROCESSED', attempts: 1 }), 100);
+        console.log(`Checkpoint 11: ${observed.size} progress snapshots from 0/100 to 100/100; max active=${maxProcessing}; failure and retry verified. Broker=${process.env.TEST_REDIS_SERVER ? output.match(/REDIS_VERSION=([^\r\n]+)/)?.[1] : 'fakeredis TCP'}, worker=Celery, DB=real isolated Mongo.`);
+    } finally {
+        child.stdin.end('stop\n');
+        await Promise.race([new Promise(resolve => child.once('exit', resolve)), new Promise(resolve => setTimeout(resolve, 25000))]);
+        if (child.exitCode === null) child.kill();
+        if (savedUrl === undefined) delete process.env.AI_SERVICE_URL; else process.env.AI_SERVICE_URL = savedUrl;
+        if (savedToken === undefined) delete process.env.AI_SERVICE_TOKEN; else process.env.AI_SERVICE_TOKEN = savedToken;
+    }
+});
+
 test('HTTP: ZIP queues 100 individual resumes, reports rejected files and cleans temporary extraction', async () => {
     const owner = await User.create({ username: 'zip-owner', email: 'zip-owner@example.com', password: 'ExamplePass9', isVerified: true });
     const cookie = 'token=' + require('jsonwebtoken').sign({ id: owner.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,

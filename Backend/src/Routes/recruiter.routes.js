@@ -15,5 +15,7 @@ router.post('/analyses/:analysisId/requirements/extract', validate(require('zod'
 router.post('/analyses/:analysisId/requirements/review', validate(require('zod').z.object({}).strict()), controller.reviewRequirements);
 router.post('/analyses/:analysisId/resumes', resumes.authorizeAnalysis, require('../middlewares/resume-upload.middleware'), resumes.upload);
 router.get('/analyses/:analysisId/resumes', resumes.list);
+router.post('/analyses/:analysisId/processing', validate(require('zod').z.object({ retryFailed: require('zod').z.boolean().optional() }).strict()), resumes.startProcessing);
+router.get('/analyses/:analysisId/processing', resumes.processingProgress);
 router.post('/analyses/:analysisId/resumes/zip', resumes.authorizeAnalysis, require('../middlewares/resume-zip.middleware'), resumes.uploadZip);
 module.exports = router;

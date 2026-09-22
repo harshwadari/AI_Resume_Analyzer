@@ -7,6 +7,7 @@ import { jdTextError, JD_MAX_LENGTH } from '../utils/jdValidation';
 import { analysisDraftReducer, createAnalysisDraft, topKError } from '../state/analysisDraft';
 import RequirementsReview from '../components/RequirementsReview';
 import BulkResumeImport from '../components/BulkResumeImport';
+import ProcessingProgress from '../components/ProcessingProgress';
 
 const steps = ['Job Description', 'Candidate Resumes', 'Result configuration', 'Start analysis'];
 const inputClass = 'mt-2 w-full rounded-xl border border-slate-300 bg-white/70 px-4 py-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 dark:border-white/15 dark:bg-slate-900/70 dark:text-white';
@@ -104,7 +105,7 @@ function AnalysisWizard({ recruiterId }) {
       <p className="text-xs font-semibold uppercase tracking-widest text-fuchsia-700 dark:text-fuchsia-300">Create an analysis</p>
       <h2 id="recruiter-page-title" className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">New Candidate Analysis</h2>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-400">Save the original job description, then upload resumes and preview result preferences.</p>
-      <p className="mt-4 rounded-xl bg-fuchsia-500/5 px-4 py-3 text-xs leading-6 text-slate-600 dark:text-slate-300">Your JD and uploaded resumes are saved to this analysis. Unuploaded selections and result preferences clear when you leave or refresh. Resume processing is not available yet.</p>
+      <p className="mt-4 rounded-xl bg-fuchsia-500/5 px-4 py-3 text-xs leading-6 text-slate-600 dark:text-slate-300">Your JD and uploaded resumes are saved to this analysis. Resume processing runs in a controlled background queue after you start it.</p>
       {state.savedAnalysis && <p role="status" className="mt-3 break-all text-sm text-emerald-800 dark:text-emerald-300">JD saved as draft. Analysis ID: {state.savedAnalysis.id}. <Link to={`/recruiter/analysis/${state.savedAnalysis.id}`} className="font-semibold underline">View saved original</Link></p>}
       {state.savedAnalysis && <RequirementsReview key={state.savedAnalysis.id} analysis={state.savedAnalysis} />}
       <nav aria-label="Analysis steps" className="mt-6">
@@ -199,13 +200,15 @@ function AnalysisWizard({ recruiterId }) {
           <div><dt className="text-xs text-slate-500 dark:text-slate-400">Job description</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm">{analysis.jd.text.trim() ? `${analysis.jd.text.trim().slice(0, 220)}${analysis.jd.text.trim().length > 220 ? '…' : ''}` : 'Not provided'}</dd></div>
           <div><dt className="text-xs text-slate-500 dark:text-slate-400">Candidate resumes</dt><dd className="mt-1 text-sm">{analysis.resumes.length} selected · {analysis.resumes.filter(file => file.id).length} uploaded</dd></div>
           <div><dt className="text-xs text-slate-500 dark:text-slate-400">Requested results</dt><dd className="mt-1 text-sm">{analysis.requestedTopK === null ? 'All candidates' : `Top ${analysis.requestedTopK} candidates`}</dd></div>
-          <div><dt className="text-xs text-slate-500 dark:text-slate-400">Processing state</dt><dd className="mt-1 text-sm">Not started</dd></div>
+          <div><dt className="text-xs text-slate-500 dark:text-slate-400">Processing state</dt><dd className="mt-1 text-sm">See live progress below</dd></div>
         </dl>
+        {state.savedAnalysis && <ProcessingProgress analysisId={state.savedAnalysis.id} />}
+        {state.savedAnalysis && <Link to={`/recruiter/analysis/${state.savedAnalysis.id}`} className="mt-4 inline-block text-sm font-semibold text-fuchsia-700 underline dark:text-fuchsia-300">View all resumes and individual failures</Link>}
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button type="button" disabled aria-describedby="analysis-start-help" className={`${buttonClass} bg-slate-500/15`}>Start analysis</button>
-          <p id="analysis-start-help" className="text-xs leading-6 text-slate-600 dark:text-slate-400">Your JD and uploaded resumes are saved. Resume processing and saving result preferences are not available yet.</p>
         </div>
-        {state.previewComplete && <div role="status" className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-800 dark:text-emerald-300"><Check size={19} className="mt-0.5 shrink-0" aria-hidden="true" />Preview complete. Your original JD and uploaded resumes are saved. Resume processing has not started, and result preferences are not saved.</div>}
+        <p id="analysis-start-help" className="mt-4 text-xs leading-6 text-slate-600 dark:text-slate-400">Background processing extracts resume text with bounded worker concurrency. Matching and ranking are added in a later checkpoint.</p>
+        {state.previewComplete && <div role="status" className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-800 dark:text-emerald-300"><Check size={19} className="mt-0.5 shrink-0" aria-hidden="true" />Preview complete. Your original JD and uploaded resumes are saved. Resume progress is shown above; result preferences are not saved.</div>}
       </div>}
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-6 dark:border-white/10">

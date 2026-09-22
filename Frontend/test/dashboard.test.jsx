@@ -10,7 +10,7 @@ import { ThemeProvider } from '../src/features/theme/theme.context.jsx';
 import { getMe, logout } from '../src/services/auth.api.js';
 import { createAnalysis, getAnalysis, createPdfAnalysis, extractRequirements, reviewRequirements, uploadResumes, listResumes, uploadResumeZip } from '../src/features/recruiter/services/analysis.api';
 
-vi.mock('../src/features/recruiter/services/analysis.api', () => ({ createAnalysis: vi.fn(), getAnalysis: vi.fn(), createPdfAnalysis: vi.fn(), downloadOriginal: vi.fn(), extractRequirements: vi.fn(), reviewRequirements: vi.fn(), uploadResumes: vi.fn(), listResumes: vi.fn(), uploadResumeZip: vi.fn() }));
+vi.mock('../src/features/recruiter/services/analysis.api', () => ({ createAnalysis: vi.fn(), getAnalysis: vi.fn(), createPdfAnalysis: vi.fn(), downloadOriginal: vi.fn(), extractRequirements: vi.fn(), reviewRequirements: vi.fn(), uploadResumes: vi.fn(), listResumes: vi.fn(), uploadResumeZip: vi.fn(), getProcessingProgress: vi.fn().mockResolvedValue(null), startResumeProcessing: vi.fn() }));
 const sampleJD = '  Backend engineer with Node.js experience. Build reliable APIs, write tests, review code, and collaborate with product teams on MongoDB applications.\n  ';
 
 vi.mock('../src/services/auth.api.js', () => ({
@@ -216,8 +216,8 @@ test('JD validation prevents saving and step bypass; valid raw text is saved onc
   expect(element.textContent).toContain('0 selected · 0 uploaded');
   expect([...element.querySelectorAll('button')].find(button => button.textContent === 'Start analysis').disabled).toBe(true);
   await clickButton('Finish preview');
-  expect(element.textContent).toContain('Your original JD and uploaded resumes are saved. Resume processing has not started');
-  expect(element.textContent).toContain('Not started');
+  expect(element.textContent).toContain('Your original JD and uploaded resumes are saved. Resume progress is shown above');
+  expect(element.textContent).toContain('See live progress below');
   await clickButton('Back');
   expect(element.textContent).toContain('Step 3 of 4');
   await clickButton('1Job Description');
