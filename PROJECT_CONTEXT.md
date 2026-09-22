@@ -8,7 +8,7 @@ Saved on 2026-09-21 from the user's architecture message and attached recruiter 
 - Implement only the requested phase/task, then run appropriate checks and explain the result.
 - The user verifies each increment before authorizing the next implementation.
 - Do not build the complete architecture at once or advance through phases automatically.
-- Current checkpoint: context saved only; no implementation phase has been requested in this exchange.
+- Current checkpoint: Checkpoint 7 organizes the private Python/FastAPI service under `ai-service/app`, adds protected health and a Node health client, and preserves Checkpoint 6 JD extraction. Use `ai-service/README.md` for current startup instructions (`app.main:app` replaces `app:app`). Wait for user verification and an explicit next-checkpoint request.
 
 ## Product direction
 

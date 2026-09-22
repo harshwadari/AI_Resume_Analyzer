@@ -24,8 +24,11 @@ const controllers = require('../src/controllers/auth.controller');
 const { generateResetToken, hashToken } = require('../src/utils/otp.utils');
 let database;
 let server, apiBase;
+let jdStorageDir;
 
 before(async () => {
+    jdStorageDir = await require('node:fs/promises').mkdtemp(require('node:path').join(require('node:os').tmpdir(), 'prepwise-jd-test-'));
+    process.env.JD_STORAGE_DIR = jdStorageDir;
     database = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(database.getUri(), { dbName: 'authentication-tests' });
     await User.init();
@@ -43,6 +46,7 @@ before(async () => {
 after(async () => {
     if (server) await new Promise(resolve => server.close(resolve));
     await mongoose.disconnect(); await database?.stop();
+    if (jdStorageDir) await require('node:fs/promises').rm(jdStorageDir, { recursive: true, force: true });
 });
 
 async function request(path, { body, cookie, headers = {}, method = body === undefined ? 'GET' : 'POST' } = {}) {
@@ -56,6 +60,124 @@ async function request(path, { body, cookie, headers = {}, method = body === und
     return { status: res.status, headers: res.headers, body: raw.startsWith('{') ? JSON.parse(raw) : null };
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
+
+test('HTTP: requirement extraction validates AI output before persistence and supports owner review', async () => {
+    const Analysis = require('../src/models/analysis.model');
+    const owner = await User.create({ username: 'requirements-owner', email: 'requirements@example.com', password: 'ExamplePass9', isVerified: true });
+    const other = await User.create({ username: 'requirements-other', email: 'requirements-other@example.com', password: 'ExamplePass9', isVerified: true });
+    const cookieFor = user => 'token=' + require('jsonwebtoken').sign({ id: user.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,
+        { algorithm: 'HS256', issuer: 'prepwise', audience: 'prepwise-web', expiresIn: '1h' });
+    const cookie = cookieFor(owner);
+    const rawJDText = 'Backend engineer. Requires Node.js and MongoDB with 3+ years experience. Python preferred. Build reliable APIs. Remote, full-time.';
+    const created = await request('/api/recruiter/analyses', { cookie, body: { rawJDText } });
+    const id = created.body.analysis.id;
+    const path = `/api/recruiter/analyses/${id}/requirements`;
+    const structuredJD = require('../../ai-service/tests/requirements.json');
+    const valid = { structuredJD, parserVersion: 'jd-v1', modelName: 'gemini-2.5-flash', extractedAt: new Date().toISOString() };
+    let result = valid, calls = 0, received;
+    const mock = require('node:http').createServer(async (req, res) => {
+        calls++;
+        let body = ''; for await (const chunk of req) body += chunk;
+        received = { body: JSON.parse(body), token: req.headers['x-ai-service-token'], path: req.url };
+        res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(result));
+    });
+    await new Promise(resolve => mock.listen(0, '127.0.0.1', resolve));
+    const oldUrl = process.env.AI_SERVICE_URL, oldToken = process.env.AI_SERVICE_TOKEN;
+    process.env.AI_SERVICE_URL = `http://127.0.0.1:${mock.address().port}`;
+    process.env.AI_SERVICE_TOKEN = 's'.repeat(40);
+    try {
+        assert.equal((await request(path + '/extract', { body: {} })).status, 401);
+        assert.equal((await request(path + '/extract', { cookie: cookieFor(other), body: {} })).status, 404);
+        assert.equal((await request(path + '/extract', { cookie, body: { structuredJD } })).status, 400);
+        assert.equal((await request(path + '/review', { cookie, body: {} })).status, 409);
+        assert.equal(calls, 0);
+        for (const bad of [{}, { ...valid, structuredJD: { ...structuredJD, extra: 'untrusted' } },
+            { ...valid, structuredJD: { ...structuredJD, minimumExperience: '3' } },
+            { ...valid, structuredJD: { ...structuredJD, maximumExperience: 1 } }, { ...valid, extractedAt: 'invalid' }]) {
+            result = bad;
+            assert.equal((await request(path + '/extract', { cookie, body: {} })).status, 502);
+            const unchanged = await Analysis.findById(id);
+            assert.equal(unchanged.structuredJD, undefined);
+            assert.equal(unchanged.rawJDText, rawJDText);
+        }
+        result = valid;
+        const extracted = await request(path + '/extract', { cookie, body: {} });
+        assert.equal(extracted.status, 200);
+        assert.deepEqual(extracted.body.analysis.structuredJD, structuredJD);
+        assert.equal(extracted.body.analysis.requirementsReviewedAt, null);
+        assert.deepEqual(received, { body: { rawJDText }, token: process.env.AI_SERVICE_TOKEN, path: '/v1/jd/extract' });
+        const count = calls;
+        assert.equal((await request(path + '/extract', { cookie, body: {} })).status, 200);
+        assert.equal(calls, count, 'Already extracted requirements should not trigger another model call');
+        assert.equal((await request(path + '/review', { cookie: cookieFor(other), body: {} })).status, 404);
+        const reviewed = await request(path + '/review', { cookie, body: {} });
+        assert.equal(reviewed.status, 200);
+        assert.ok(reviewed.body.analysis.requirementsReviewedAt);
+        const reloaded = await request(`/api/recruiter/analyses/${id}`, { cookie });
+        assert.equal(reloaded.body.analysis.requirementsReviewedAt, reviewed.body.analysis.requirementsReviewedAt);
+        const stored = await Analysis.findById(id);
+        assert.equal(stored.rawJDText, rawJDText);
+        assert.equal(stored.parserVersion, 'jd-v1');
+        assert.equal(stored.modelName, valid.modelName);
+        assert.ok(stored.extractedAt instanceof Date);
+        stored.structuredJD = { arbitrary: 'unvalidated' };
+        await assert.rejects(stored.save(), /Invalid structured JD/);
+    } finally {
+        await new Promise(resolve => mock.close(resolve));
+        if (oldUrl === undefined) delete process.env.AI_SERVICE_URL; else process.env.AI_SERVICE_URL = oldUrl;
+        if (oldToken === undefined) delete process.env.AI_SERVICE_TOKEN; else process.env.AI_SERVICE_TOKEN = oldToken;
+    }
+});
+
+test('HTTP: JD PDF extraction, private original storage, validation and owner-only download', async () => {
+    const fs = require('node:fs/promises');
+    const Analysis = require('../src/models/analysis.model');
+    const owner = await User.create({ username: 'pdf-owner', email: 'pdf-owner@example.com', password: 'ExamplePass9', isVerified: true });
+    const other = await User.create({ username: 'pdf-other', email: 'pdf-other@example.com', password: 'ExamplePass9', isVerified: true });
+    const cookieFor = user => 'token=' + require('jsonwebtoken').sign({ id: user.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,
+        { algorithm: 'HS256', issuer: 'prepwise', audience: 'prepwise-web', expiresIn: '1h' });
+    const cookie = cookieFor(owner);
+    const pdf = require('./pdf-fixture')();
+    const upload = async (bytes, { name = 'job.pdf', type = 'application/pdf', auth = cookie, origin = process.env.FRONTEND_URL } = {}) => {
+        const form = new FormData();
+        if (bytes) form.append('jd', new Blob([bytes], { type }), name);
+        const res = await fetch(apiBase + '/api/recruiter/analyses/pdf', { method: 'POST',
+            headers: { Origin: origin, 'X-Requested-With': 'XMLHttpRequest', ...(auth ? { Cookie: auth } : {}) }, body: form });
+        return { status: res.status, body: await res.json() };
+    };
+    assert.equal((await upload(pdf, { auth: '' })).status, 401);
+    assert.equal((await upload(pdf, { origin: 'https://attacker.example' })).status, 403);
+    assert.equal((await upload(null)).status, 400);
+    assert.equal((await upload(pdf, { name: 'job.txt', type: 'text/plain' })).status, 400);
+    assert.equal((await upload(Buffer.from('not a PDF'))).status, 400);
+    assert.equal((await upload(Buffer.from('%PDF-1.4\nmalformed'))).status, 422);
+    assert.equal((await upload(require('./pdf-fixture')(''))).status, 422);
+    assert.equal((await upload(Buffer.alloc(5 * 1024 * 1024 + 1))).status, 413);
+    assert.equal(await Analysis.countDocuments({ recruiter: owner.id }), 0);
+    assert.deepEqual(await fs.readdir(jdStorageDir), []);
+    const created = await upload(pdf, { name: '../../unsafe<>job.pdf' });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const record = created.body.analysis;
+    assert.equal(record.sourceType, 'pdf');
+    assert.equal(record.extractionStatus, 'completed');
+    assert.match(record.rawJDText, /Senior Engineer/);
+    assert.equal(record.originalFile.key, undefined);
+    assert.doesNotMatch(record.originalFile.name, /[<>/\\]/);
+    const stored = await Analysis.findById(record.id);
+    assert.equal(stored.rawJDText, record.rawJDText);
+    assert.deepEqual(await fs.readFile(require('../src/services/jd-storage.service').filePath(stored.originalFile.key)), pdf);
+    const url = `/api/recruiter/analyses/${record.id}/original`;
+    assert.equal((await request(url)).status, 401);
+    assert.equal((await request(url, { cookie: cookieFor(other) })).status, 404);
+    const downloaded = await fetch(apiBase + url, { headers: { Cookie: cookie } });
+    assert.equal(downloaded.status, 200);
+    assert.match(downloaded.headers.get('content-disposition'), /^attachment/);
+    assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), pdf);
+    await Analysis.updateOne({ _id: record.id }, { $set: { sourceType: 'text', originalFile: { key: 'changed' }, rawJDText: 'changed '.repeat(30) } });
+    const preserved = await Analysis.findById(record.id);
+    assert.equal(preserved.originalFile.key, stored.originalFile.key);
+    assert.equal(preserved.rawJDText, record.rawJDText);
+});
 
 test('HTTP: recruiter JD creation preserves original text and isolates ownership', async () => {
     const Analysis = require('../src/models/analysis.model');

@@ -2,9 +2,10 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, FileText, Plus, X } from 'lucide-react';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { Link } from 'react-router-dom';
-import { createAnalysis } from '../services/analysis.api';
+import { createAnalysis, createPdfAnalysis } from '../services/analysis.api';
 import { jdTextError, JD_MAX_LENGTH } from '../utils/jdValidation';
 import { analysisDraftReducer, createAnalysisDraft, topKError } from '../state/analysisDraft';
+import RequirementsReview from '../components/RequirementsReview';
 
 const steps = ['Job Description', 'Candidate Resumes', 'Result configuration', 'Start analysis'];
 const inputClass = 'mt-2 w-full rounded-xl border border-slate-300 bg-white/70 px-4 py-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 dark:border-white/15 dark:bg-slate-900/70 dark:text-white';
@@ -21,13 +22,16 @@ function AnalysisWizard({ recruiterId }) {
   const [fileError, setFileError] = useState('');
   const [jdTouched, setJdTouched] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [sourceType, setSourceType] = useState('text');
+  const [jdPdf, setJdPdf] = useState(null);
   const [saveError, setSaveError] = useState('');
   const saveRequest = useRef(null);
   const heading = useRef(null);
   const previousStep = useRef(0);
   const { analysis, step } = state;
   const configError = topKError(state);
-  const jdError = jdTextError(analysis.jd.text);
+  const jdError = sourceType === 'pdf' && !state.savedAnalysis
+    ? (!jdPdf ? 'Choose a JD PDF to upload.' : '') : jdTextError(analysis.jd.text);
 
   useEffect(() => () => saveRequest.current?.abort(), []);
 
@@ -59,7 +63,9 @@ function AnalysisWizard({ recruiterId }) {
     setSaving(true);
     setSaveError('');
     try {
-      const saved = await createAnalysis(analysis.jd.text, { signal: controller.signal });
+      const saved = sourceType === 'pdf'
+        ? await createPdfAnalysis(jdPdf, { signal: controller.signal })
+        : await createAnalysis(analysis.jd.text, { signal: controller.signal });
       if (!controller.signal.aborted) dispatch({ type: 'saved', analysis: saved });
     } catch (error) {
       if (!controller.signal.aborted && error.code !== 'ERR_CANCELED') setSaveError(error.response?.data?.message || 'Unable to confirm the save. Please try again.');
@@ -82,8 +88,9 @@ function AnalysisWizard({ recruiterId }) {
       <p className="text-xs font-semibold uppercase tracking-widest text-fuchsia-700 dark:text-fuchsia-300">Create an analysis</p>
       <h2 id="recruiter-page-title" className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">New Candidate Analysis</h2>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-400">Save the original job description, then preview resume selection and result preferences.</p>
-      <p className="mt-4 rounded-xl bg-fuchsia-500/5 px-4 py-3 text-xs leading-6 text-slate-600 dark:text-slate-300">Only the JD is saved to your analysis. Resume selections and result preferences remain a preview and clear when you leave or refresh. No processing takes place.</p>
+      <p className="mt-4 rounded-xl bg-fuchsia-500/5 px-4 py-3 text-xs leading-6 text-slate-600 dark:text-slate-300">Only the JD is saved to your analysis. PDF JDs have their text extracted. Resume selections and result preferences remain a preview and clear when you leave or refresh.</p>
       {state.savedAnalysis && <p role="status" className="mt-3 break-all text-sm text-emerald-800 dark:text-emerald-300">JD saved as draft. Analysis ID: {state.savedAnalysis.id}. <Link to={`/recruiter/analysis/${state.savedAnalysis.id}`} className="font-semibold underline">View saved original</Link></p>}
+      {state.savedAnalysis && <RequirementsReview key={state.savedAnalysis.id} analysis={state.savedAnalysis} />}
       <nav aria-label="Analysis steps" className="mt-6">
         <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {steps.map((label, index) => <li key={label}>
@@ -100,9 +107,27 @@ function AnalysisWizard({ recruiterId }) {
       <h3 ref={heading} tabIndex={-1} className="mt-2 text-xl font-semibold outline-none">{steps[step]}</h3>
 
       {step === 0 && <div className="mt-5">
+        <fieldset disabled={saving || Boolean(state.savedAnalysis)} className="mb-5 flex gap-5 text-sm">
+          <legend className="mb-2 font-medium">Job description source</legend>
+          {[['text', 'Paste text'], ['pdf', 'Upload PDF']].map(([value, label]) => <label key={value} className="flex items-center gap-2"><input type="radio" name="jd-source" value={value} checked={sourceType === value} onChange={() => { setSourceType(value); setJdTouched(false); setSaveError(''); }} />{label}</label>)}
+        </fieldset>
+        {sourceType === 'pdf' && <div className="mb-5 rounded-xl border border-dashed border-fuchsia-300 p-4 dark:border-fuchsia-500/30">
+          <label htmlFor="jd-pdf" className="text-sm font-medium">JD PDF</label>
+          <input id="jd-pdf" type="file" accept=".pdf,application/pdf" disabled={saving || Boolean(state.savedAnalysis)} className="mt-3 block w-full text-sm" onChange={event => {
+            const file = event.target.files?.[0];
+            setJdPdf(null); setJdTouched(false); setSaveError('');
+            if (!file) return;
+            if (!/\.pdf$/i.test(file.name) || (file.type && file.type !== 'application/pdf')) { setSaveError('Choose a PDF file.'); event.target.value = ''; return; }
+            if (file.size > 5 * 1024 * 1024) { setSaveError('JD PDF must be 5 MB or smaller.'); event.target.value = ''; return; }
+            setJdPdf(file);
+          }} />
+          <p className="mt-3 text-xs leading-6 text-slate-600 dark:text-slate-400">Up to 5 MB and 50 pages. Use a readable, unencrypted PDF with 100–20,000 characters of text. Your original PDF is preserved; scanned images require pasted text.</p>
+        </div>}
+        {(sourceType === 'text' || state.savedAnalysis) && <>
         <label htmlFor="analysis-jd" className="text-sm font-medium">Job description text</label>
         <textarea id="analysis-jd" value={analysis.jd.text} readOnly={Boolean(state.savedAnalysis) || saving} onBlur={() => setJdTouched(true)} onChange={event => { dispatch({ type: 'jd', text: event.target.value }); setSaveError(''); }} rows={9} placeholder="Paste the role, responsibilities, and candidate requirements…" aria-invalid={jdTouched && Boolean(jdError)} aria-describedby={`analysis-jd-help${jdTouched && jdError ? ' analysis-jd-error' : ''}`} className={`${inputClass} resize-y`} />
         <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs leading-6 text-slate-500 dark:text-slate-400"><p id="analysis-jd-help">100–20,000 characters. Surrounding whitespace does not count toward the minimum.</p><span>{analysis.jd.text.length.toLocaleString()} / {JD_MAX_LENGTH.toLocaleString()}</span></div>
+        </>}
         {jdTouched && jdError && <p id="analysis-jd-error" role="alert" className="mt-2 text-sm text-rose-700 dark:text-rose-300">{jdError}</p>}
         {saveError && <p role="alert" className="mt-3 text-sm text-rose-700 dark:text-rose-300">{saveError}</p>}
         <p className="mt-3 text-xs leading-6 text-slate-600 dark:text-slate-400">The original text, including whitespace and line breaks, is preserved. Once saved, it is read-only. Create a new analysis for a different JD.</p>

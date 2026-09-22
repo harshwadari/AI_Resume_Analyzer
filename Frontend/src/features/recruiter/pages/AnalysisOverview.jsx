@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/hooks/useAuth';
-import { getAnalysis } from '../services/analysis.api';
+import { getAnalysis, downloadOriginal } from '../services/analysis.api';
+import RequirementsReview from '../components/RequirementsReview';
 
 export default function AnalysisOverview() {
   const { analysisId } = useParams();
@@ -12,6 +13,20 @@ export default function AnalysisOverview() {
 function SavedAnalysis({ analysisId }) {
   const [state, setState] = useState({ loading: true, analysis: null, error: '' });
   const [attempt, setAttempt] = useState(0);
+  const [downloadError, setDownloadError] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const download = async () => {
+    setDownloading(true); setDownloadError('');
+    try {
+      const blob = await downloadOriginal(analysisId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = state.analysis.originalFile.name;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { setDownloadError('Unable to download the original PDF. Please try again.'); }
+    finally { setDownloading(false); }
+  };
   useEffect(() => {
     const controller = new AbortController();
     getAnalysis(analysisId, { signal: controller.signal }).then(analysis => {
@@ -32,8 +47,11 @@ function SavedAnalysis({ analysisId }) {
         <div><dt className="text-slate-500 dark:text-slate-400">Source type</dt><dd className="mt-1">{state.analysis.sourceType}</dd></div>
         <div><dt className="text-slate-500 dark:text-slate-400">Status</dt><dd className="mt-1">Draft · processing not started</dd></div>
       </dl>
+      <RequirementsReview key={state.analysis.id} analysis={state.analysis} />
       <h3 className="mt-8 text-lg font-semibold">Original job description</h3>
-      <p className="mt-2 text-xs leading-6 text-slate-600 dark:text-slate-400">Saved exactly as submitted. This read-only original remains the source of truth.</p>
+      <p className="mt-2 text-xs leading-6 text-slate-600 dark:text-slate-400">{state.analysis.sourceType === 'pdf' ? 'Text extracted from your original PDF. The preserved PDF remains the source of truth.' : 'Saved exactly as submitted. This read-only original remains the source of truth.'}</p>
+      {state.analysis.originalFile && <div className="mt-3 text-sm"><p>Text extraction: {state.analysis.extractionStatus}</p><button type="button" disabled={downloading} onClick={download} className="mt-2 break-all font-semibold text-fuchsia-700 underline disabled:opacity-50 dark:text-fuchsia-300">{downloading ? 'Downloading…' : `Download original PDF: ${state.analysis.originalFile.name}`}</button></div>}
+      {downloadError && <p role="alert" className="mt-2 text-sm text-rose-700 dark:text-rose-300">{downloadError}</p>}
       <pre className="mt-4 whitespace-pre-wrap break-words rounded-2xl border border-slate-200 p-5 font-sans text-sm leading-7 dark:border-white/10">{state.analysis.rawJDText}</pre>
     </>}
     <Link to="/recruiter/analysis/new" className="mt-6 inline-block rounded-lg text-sm font-semibold text-fuchsia-700 underline dark:text-fuchsia-300">Create a new analysis</Link>

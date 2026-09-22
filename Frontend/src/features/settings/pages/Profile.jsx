@@ -1,5 +1,5 @@
 import { ImagePlus, UserRound, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import WorkspaceHeader from '../../../components/layout/WorkspaceHeader.jsx';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { clearProfileAvatar } from '../../auth/profilePreferences';
@@ -18,12 +18,19 @@ function ProfileEditor() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const picker = useRef(null);
+  const toastTimer = useRef(null);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  const showMessage = text => {
+    clearTimeout(toastTimer.current);
+    setMessage(text);
+    toastTimer.current = setTimeout(() => setMessage(''), 3000);
+  };
   const saveProfile = event => {
     event.preventDefault(); setMessage(''); setError('');
     const cleanName = name.trim();
     if (cleanName.length < 2 || cleanName.length > 50) { setError('Profile name must be between 2 and 50 characters.'); return; }
     const result = updateProfile({ name: cleanName, avatar });
-    if (result.success) { if (!avatar) clearProfileAvatar(user.id); setMessage('Profile saved successfully.'); } else setError(result.message);
+    if (result.success) { if (!avatar) clearProfileAvatar(user.id); showMessage('Profile saved successfully.'); } else setError(result.message);
   };
   const chooseAvatar = event => {
     const file = event.target.files?.[0];
@@ -31,10 +38,10 @@ function ProfileEditor() {
     if (!file.type.startsWith('image/')) { setError('Choose an image file.'); return; }
     if (file.size > 1024 * 1024) { setError('Profile pictures must be 1 MB or smaller.'); return; }
     const reader = new FileReader();
-    reader.onload = () => { setAvatar(String(reader.result)); setError(''); setMessage('Preview ready. Save your profile to keep it.'); };
+    reader.onload = () => { setAvatar(String(reader.result)); setError(''); showMessage('Preview ready. Save your profile to keep it.'); };
     reader.readAsDataURL(file);
   };
-  const removeAvatar = () => { setAvatar(''); setMessage('Avatar removed from the preview. Save your profile to confirm.'); };
+  const removeAvatar = () => { setAvatar(''); showMessage('Avatar removed from the preview. Save your profile to confirm.'); };
 
   return <section aria-labelledby="profile-title" className="glass-panel-strong rounded-[32px] p-6 sm:p-8">
     <h2 id="profile-title" className="text-xl font-semibold">Edit profile</h2>

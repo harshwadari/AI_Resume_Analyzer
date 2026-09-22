@@ -1,0 +1,13 @@
+{
+  "title": "Backend engineer",
+  "requiredSkills": ["Node.js", "MongoDB"],
+  "preferredSkills": ["Python"],
+  "minimumExperience": 3,
+  "maximumExperience": null,
+  "education": [],
+  "certifications": [],
+  "responsibilities": ["Build reliable APIs"],
+  "domain": null,
+  "location": "Remote",
+  "employmentType": "Full-time"
+}

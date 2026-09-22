@@ -8,9 +8,9 @@ import PrivateStateBoundary from '../src/features/auth/components/PrivateStateBo
 import AuthSuccess from '../src/features/auth/components/AuthSuccess.jsx';
 import { ThemeProvider } from '../src/features/theme/theme.context.jsx';
 import { getMe, logout } from '../src/services/auth.api.js';
-import { createAnalysis, getAnalysis } from '../src/features/recruiter/services/analysis.api';
+import { createAnalysis, getAnalysis, createPdfAnalysis, extractRequirements, reviewRequirements } from '../src/features/recruiter/services/analysis.api';
 
-vi.mock('../src/features/recruiter/services/analysis.api', () => ({ createAnalysis: vi.fn(), getAnalysis: vi.fn() }));
+vi.mock('../src/features/recruiter/services/analysis.api', () => ({ createAnalysis: vi.fn(), getAnalysis: vi.fn(), createPdfAnalysis: vi.fn(), downloadOriginal: vi.fn(), extractRequirements: vi.fn(), reviewRequirements: vi.fn() }));
 const sampleJD = '  Backend engineer with Node.js experience. Build reliable APIs, write tests, review code, and collaborate with product teams on MongoDB applications.\n  ';
 
 vi.mock('../src/services/auth.api.js', () => ({
@@ -56,6 +56,72 @@ const fillField = async (selector, value) => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 };
+
+test('requirements preview handles extraction failure, missing values, zero experience and recruiter review', async () => {
+  await mount('/recruiter/analysis/saved-analysis');
+  expect(element.textContent).toContain(sampleJD);
+  extractRequirements.mockRejectedValueOnce({ response: { data: { message: 'JD extraction is unavailable. Please retry.' } } });
+  await clickButton('Extract requirements');
+  expect(element.textContent).toContain('JD extraction is unavailable. Please retry.');
+  expect(element.textContent).not.toContain('Mark requirements reviewed');
+  const saved = { id: 'saved-analysis', rawJDText: sampleJD, structuredJD: {
+    title: 'Backend engineer', requiredSkills: ['Node.js'], preferredSkills: ['Python'], minimumExperience: 0,
+    maximumExperience: null, education: [], certifications: [], responsibilities: ['Build APIs'], domain: null,
+    location: 'Remote', employmentType: 'Full-time',
+  }, parserVersion: 'jd-v1', modelName: 'synthetic-model', extractedAt: '2026-09-21T12:00:00Z', requirementsReviewedAt: null };
+  extractRequirements.mockResolvedValueOnce(saved);
+  await clickButton('Extract requirements');
+  const panel = element.querySelector('[aria-label="Job requirements review"]');
+  expect(panel.textContent).toContain('Python');
+  expect(panel.textContent).toContain('Not specified');
+  expect([...panel.querySelectorAll('dt')].find(node => node.textContent === 'Minimum experience (years)').nextElementSibling.textContent).toBe('0');
+  expect(panel.textContent).toContain('jd-v1');
+  reviewRequirements.mockResolvedValueOnce({ ...saved, requirementsReviewedAt: '2026-09-21T12:01:00Z' });
+  await clickButton('Mark requirements reviewed');
+  expect(element.textContent).toContain('Requirements marked reviewed');
+  expect(element.textContent).toContain(sampleJD);
+  expect(reviewRequirements.mock.calls[0][0]).toBe('saved-analysis');
+});
+
+test('profile save toast expires after three seconds and repeated saves restart it', async () => {
+  await mount('/profile');
+  vi.useFakeTimers();
+  await clickButton('Save profile');
+  expect(element.textContent).toContain('Profile saved successfully.');
+  await act(async () => vi.advanceTimersByTime(2000));
+  await clickButton('Save profile');
+  await act(async () => vi.advanceTimersByTime(2999));
+  expect(element.textContent).toContain('Profile saved successfully.');
+  await act(async () => vi.advanceTimersByTime(1));
+  expect(element.textContent).not.toContain('Profile saved successfully.');
+});
+
+test('JD PDF selection validates size, reports extraction failure, and saves extracted text', async () => {
+  await mount('/recruiter/analysis/new');
+  await act(async () => element.querySelector('input[name="jd-source"][value="pdf"]').click());
+  await clickButton('Save JD & continue');
+  expect(element.textContent).toContain('Choose a JD PDF');
+  const choose = async file => {
+    const input = element.querySelector('#jd-pdf');
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+  };
+  await choose(new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'large.pdf', { type: 'application/pdf' }));
+  expect(element.textContent).toContain('5 MB or smaller');
+  expect(createPdfAnalysis).not.toHaveBeenCalled();
+  const file = new File(['%PDF-1.4'], 'job.pdf', { type: 'application/pdf' });
+  await choose(file);
+  createPdfAnalysis.mockRejectedValueOnce({ response: { data: { message: 'Could not extract this PDF.' } } });
+  await clickButton('Save JD & continue');
+  expect(element.textContent).toContain('Could not extract this PDF.');
+  createPdfAnalysis.mockResolvedValueOnce({ id: 'pdf-analysis', recruiter: 'A', sourceType: 'pdf', rawJDText: sampleJD, extractionStatus: 'completed' });
+  await clickButton('Save JD & continue');
+  expect(createPdfAnalysis.mock.calls[1][0]).toBe(file);
+  expect(element.textContent).toContain('Step 2 of 4');
+  await clickButton('1Job Description');
+  expect(element.querySelector('#analysis-jd').value).toBe(sampleJD);
+  expect(element.querySelector('#analysis-jd').readOnly).toBe(true);
+});
 
 test('JD validation prevents saving and step bypass; valid raw text is saved once before preview', async () => {
   await mount('/recruiter/analysis/new');
