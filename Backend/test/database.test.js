@@ -29,6 +29,7 @@ let jdStorageDir;
 before(async () => {
     jdStorageDir = await require('node:fs/promises').mkdtemp(require('node:path').join(require('node:os').tmpdir(), 'prepwise-jd-test-'));
     process.env.JD_STORAGE_DIR = jdStorageDir;
+    process.env.RESUME_STORAGE_DIR = require('node:path').join(jdStorageDir, 'resumes');
     database = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(database.getUri(), { dbName: 'authentication-tests' });
     await User.init();
@@ -60,6 +61,99 @@ async function request(path, { body, cookie, headers = {}, method = body === und
     return { status: res.status, headers: res.headers, body: raw.startsWith('{') ? JSON.parse(raw) : null };
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
+
+test('HTTP: ZIP queues 100 individual resumes, reports rejected files and cleans temporary extraction', async () => {
+    const owner = await User.create({ username: 'zip-owner', email: 'zip-owner@example.com', password: 'ExamplePass9', isVerified: true });
+    const cookie = 'token=' + require('jsonwebtoken').sign({ id: owner.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,
+        { algorithm: 'HS256', issuer: 'prepwise', audience: 'prepwise-web', expiresIn: '1h' });
+    const created = await request('/api/recruiter/analyses', { cookie, body: { rawJDText: 'ZIP upload test job description with Node.js development responsibilities, reliable services, code review and team collaboration.' } });
+    const analysisId = created.body.analysis.id;
+    const fs = require('node:fs/promises'), { tempRoot } = require('../src/middlewares/resume-zip.middleware');
+    await fs.mkdir(tempRoot, { recursive: true });
+    const before = await fs.readdir(tempRoot);
+    const send = async (bytes, auth = cookie) => {
+        const body = new FormData(); body.append('archive', new Blob([bytes], { type: 'application/zip' }), 'resumes.zip');
+        const response = await fetch(`${apiBase}/api/recruiter/analyses/${analysisId}/resumes/zip`, { method: 'POST', body,
+            headers: { Origin: process.env.FRONTEND_URL, 'X-Requested-With': 'XMLHttpRequest', ...(auth ? { Cookie: auth } : {}) } });
+        return { status: response.status, body: await response.json() };
+    };
+    const zip = require('./zip-fixture')(Array.from({ length: 100 }, (_, index) => ({ name: `${index}.pdf`, data: require('./pdf-fixture')() })));
+    assert.equal((await send(zip, '')).status, 401);
+    const result = await send(zip);
+    assert.equal(result.status, 201, JSON.stringify(result.body)); assert.equal(result.body.resumes.length, 100);
+    assert.ok(result.body.resumes.every(item => item.processingStatus === 'UPLOADED'));
+    const list = await request(`/api/recruiter/analyses/${analysisId}/resumes`, { cookie });
+    assert.equal(list.body.total, 100); assert.equal(list.body.resumes.length, 50);
+    assert.equal((await request(`/api/recruiter/analyses/${analysisId}/resumes?page=2`, { cookie })).body.resumes.length, 50);
+    const invalid = await send(require('./zip-fixture')([{ name: 'bad.pdf', data: Buffer.from('fake') }, { name: 'notes.txt', data: Buffer.from('text') }]));
+    assert.equal(invalid.status, 201); assert.equal(invalid.body.rejected.length, 2); assert.equal(invalid.body.resumes.length, 0);
+    assert.equal((await send(require('./zip-fixture')([{ name: '../escape.pdf', data: require('./pdf-fixture')() }]))).status, 400);
+    assert.equal((await send(Buffer.alloc(50 * 1024 * 1024 + 1))).status, 413);
+    assert.deepEqual(await fs.readdir(tempRoot), before);
+});
+
+test('HTTP: single and ten-resume uploads persist private metadata and reject invalid batches', async () => {
+    const fs = require('node:fs/promises');
+    const Resume = require('../src/models/resume.model');
+    const initialStored = (await fs.readdir(process.env.RESUME_STORAGE_DIR).catch(() => [])).length;
+    const owner = await User.create({ username: 'resume-owner', email: 'resume-owner@example.com', password: 'ExamplePass9', isVerified: true });
+    const other = await User.create({ username: 'resume-other', email: 'resume-other@example.com', password: 'ExamplePass9', isVerified: true });
+    const cookieFor = user => 'token=' + require('jsonwebtoken').sign({ id: user.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,
+        { algorithm: 'HS256', issuer: 'prepwise', audience: 'prepwise-web', expiresIn: '1h' });
+    const cookie = cookieFor(owner);
+    const created = await request('/api/recruiter/analyses', { cookie, body: { rawJDText: 'Resume ingestion test job description with Node.js development responsibilities, reliable services, code review and team collaboration.' } });
+    const id = created.body.analysis.id, path = `/api/recruiter/analyses/${id}/resumes`;
+    const pdf = require('./pdf-fixture')();
+    const upload = async (files, auth = cookie, origin = process.env.FRONTEND_URL) => {
+        const form = new FormData();
+        files.forEach(file => form.append('resumes', new Blob([file.bytes || pdf], { type: file.type || 'application/pdf' }), file.name));
+        const res = await fetch(apiBase + path, { method: 'POST', headers: { Origin: origin, 'X-Requested-With': 'XMLHttpRequest', ...(auth ? { Cookie: auth } : {}) }, body: form });
+        return { status: res.status, body: await res.json() };
+    };
+    assert.equal((await upload([{ name: 'one.pdf' }], '')).status, 401);
+    assert.equal((await upload([{ name: 'one.pdf' }], cookieFor(other))).status, 404);
+    assert.equal((await upload([{ name: 'one.pdf' }], cookie, 'https://attacker.example')).status, 403);
+    assert.equal((await upload([])).status, 400);
+    assert.equal((await upload([{ name: 'file.zip', type: 'application/zip' }])).status, 400);
+    assert.equal((await upload([{ name: 'good.pdf' }, { name: 'bad.pdf', bytes: Buffer.from('%PDF-invalid') }])).status, 400);
+    assert.equal((await upload([{ name: 'large.pdf', bytes: Buffer.alloc(5 * 1024 * 1024 + 1) }])).status, 413);
+    assert.equal((await upload(Array.from({ length: 11 }, (_, index) => ({ name: `${index}.pdf` })))).status, 400);
+    assert.equal(await Resume.countDocuments({ analysis: id }), 0);
+    const single = await upload([{ name: '../../resume.pdf' }]);
+    assert.equal(single.status, 201, JSON.stringify(single.body));
+    assert.equal(single.body.resumes.length, 1);
+    const record = single.body.resumes[0];
+    assert.equal(record.originalFilename, 'resume.pdf');
+    assert.equal(record.analysisId, id);
+    assert.equal(record.recruiterId, owner.id);
+    assert.equal(record.processingStatus, 'UPLOADED');
+    assert.ok(record.createdAt);
+    assert.equal(record.storageReference, undefined);
+    const ten = await upload(Array.from({ length: 10 }, (_, index) => ({ name: `resume-${index}.pdf` })));
+    assert.equal(ten.status, 201, JSON.stringify(ten.body));
+    assert.equal(ten.body.resumes.length, 10);
+    const list = await request(path, { cookie });
+    assert.equal(list.status, 200);
+    assert.equal(list.body.total, 11);
+    assert.equal(new Set(list.body.resumes.map(item => item.id)).size, 11);
+    for (const saved of await Resume.find({ analysis: id }).select('+storageReference')) {
+        assert.equal(saved.processingStatus, 'UPLOADED');
+        assert.deepEqual(await fs.readFile(require('../src/services/resume-storage.service').filePath(saved.storageReference)), pdf);
+    }
+    assert.equal((await request(path, { cookie: cookieFor(other) })).status, 404);
+    assert.equal((await request(path)).status, 401);
+    assert.equal((await request(path + '?page=0', { cookie })).status, 400);
+    assert.equal((await request(path + '?page=2', { cookie })).body.resumes.length, 0);
+    const originalCreate = Resume.create;
+    try {
+        Resume.create = async () => { throw new Error('Synthetic database failure'); };
+        assert.equal((await upload([{ name: 'rollback.pdf' }])).status, 500);
+    } finally { Resume.create = originalCreate; }
+    assert.equal(await Resume.countDocuments({ analysis: id }), 11);
+    assert.equal((await fs.readdir(process.env.RESUME_STORAGE_DIR)).length, initialStored + 11);
+    const invalid = new Resume({ analysis: id, recruiter: owner.id, originalFilename: 'test.pdf', storageReference: 'private', size: 1, processingStatus: 'ARBITRARY' });
+    await assert.rejects(invalid.validate(), /processingStatus/);
+});
 
 test('HTTP: requirement extraction validates AI output before persistence and supports owner review', async () => {
     const Analysis = require('../src/models/analysis.model');
@@ -154,7 +248,7 @@ test('HTTP: JD PDF extraction, private original storage, validation and owner-on
     assert.equal((await upload(require('./pdf-fixture')(''))).status, 422);
     assert.equal((await upload(Buffer.alloc(5 * 1024 * 1024 + 1))).status, 413);
     assert.equal(await Analysis.countDocuments({ recruiter: owner.id }), 0);
-    assert.deepEqual(await fs.readdir(jdStorageDir), []);
+    assert.deepEqual((await fs.readdir(jdStorageDir)).filter(name => name.endsWith('.pdf')), []);
     const created = await upload(pdf, { name: '../../unsafe<>job.pdf' });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     const record = created.body.analysis;

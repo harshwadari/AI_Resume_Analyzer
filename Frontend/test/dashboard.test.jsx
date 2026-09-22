@@ -8,9 +8,9 @@ import PrivateStateBoundary from '../src/features/auth/components/PrivateStateBo
 import AuthSuccess from '../src/features/auth/components/AuthSuccess.jsx';
 import { ThemeProvider } from '../src/features/theme/theme.context.jsx';
 import { getMe, logout } from '../src/services/auth.api.js';
-import { createAnalysis, getAnalysis, createPdfAnalysis, extractRequirements, reviewRequirements } from '../src/features/recruiter/services/analysis.api';
+import { createAnalysis, getAnalysis, createPdfAnalysis, extractRequirements, reviewRequirements, uploadResumes, listResumes, uploadResumeZip } from '../src/features/recruiter/services/analysis.api';
 
-vi.mock('../src/features/recruiter/services/analysis.api', () => ({ createAnalysis: vi.fn(), getAnalysis: vi.fn(), createPdfAnalysis: vi.fn(), downloadOriginal: vi.fn(), extractRequirements: vi.fn(), reviewRequirements: vi.fn() }));
+vi.mock('../src/features/recruiter/services/analysis.api', () => ({ createAnalysis: vi.fn(), getAnalysis: vi.fn(), createPdfAnalysis: vi.fn(), downloadOriginal: vi.fn(), extractRequirements: vi.fn(), reviewRequirements: vi.fn(), uploadResumes: vi.fn(), listResumes: vi.fn(), uploadResumeZip: vi.fn() }));
 const sampleJD = '  Backend engineer with Node.js experience. Build reliable APIs, write tests, review code, and collaborate with product teams on MongoDB applications.\n  ';
 
 vi.mock('../src/services/auth.api.js', () => ({
@@ -29,6 +29,7 @@ beforeEach(() => {
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value() { this.setAttribute('open', ''); } });
   localStorage.setItem('prepwise-theme', 'dark');
   getMe.mockResolvedValue({ user: { id: 'A', username: 'Candidate' } });
+  listResumes.mockResolvedValue({ resumes: [], total: 0, page: 1, pageSize: 50 });
   createAnalysis.mockImplementation(async rawJDText => ({ id: 'saved-analysis', recruiter: 'A', sourceType: 'text', rawJDText, status: 'draft' }));
   getAnalysis.mockResolvedValue({ id: 'saved-analysis', recruiter: 'A', sourceType: 'text', rawJDText: sampleJD, status: 'draft' });
   element = document.createElement('div');
@@ -56,6 +57,77 @@ const fillField = async (selector, value) => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 };
+
+test('ZIP import displays accepted and rejected entries and refreshes saved resumes', async () => {
+  await mount('/recruiter/analysis/saved-analysis');
+  uploadResumeZip.mockResolvedValueOnce({ totalFiles: 102, validPDFs: 100,
+    rejected: [{ name: 'fake.pdf', reason: 'Invalid PDF.' }, { name: 'notes.txt', reason: 'Only PDFs.' }],
+    resumes: Array.from({ length: 100 }, (_, index) => ({ id: `zip-${index}` })),
+  });
+  const picker = element.querySelector('input[aria-label="Choose resume ZIP"]');
+  Object.defineProperty(picker, 'files', { configurable: true, value: [new File(['PK'], 'resumes.zip', { type: 'application/zip' })] });
+  await act(async () => picker.dispatchEvent(new Event('change', { bubbles: true })));
+  await clickButton('Import ZIP');
+  expect(element.textContent).toContain('Total files: 102');
+  expect(element.textContent).toContain('Valid PDFs: 100');
+  expect(element.textContent).toContain('Rejected files: 2');
+  expect(element.textContent).toContain('Uploaded: 100');
+  expect(element.textContent).toContain('fake.pdf: Invalid PDF.');
+  expect(listResumes.mock.calls.length).toBeGreaterThan(1);
+});
+
+test('analysis uploads one then ten resumes, lists statuses, and restores them on reload', async () => {
+  let stored = [];
+  listResumes.mockImplementation(async () => ({ resumes: stored, total: stored.length, page: 1, pageSize: 50 }));
+  uploadResumes.mockImplementation(async (analysisId, files) => {
+    const added = files.map((file, index) => ({ id: `resume-${stored.length + index}`, analysisId, originalFilename: file.name, size: file.size, processingStatus: 'UPLOADED', createdAt: '2026-09-22T00:00:00Z' }));
+    stored = [...stored, ...added];
+    return added;
+  });
+  await mount('/recruiter/analysis/saved-analysis');
+  const choose = async files => {
+    const picker = element.querySelector('[aria-label="Analysis resumes"] input[type="file"]');
+    Object.defineProperty(picker, 'files', { configurable: true, value: files });
+    await act(async () => picker.dispatchEvent(new Event('change', { bubbles: true })));
+  };
+  await choose([new File(['PDF'], 'one.pdf', { type: 'application/pdf' })]);
+  await clickButton('Upload resumes');
+  expect(element.textContent).toContain('1 uploaded resume');
+  const ten = Array.from({ length: 10 }, (_, index) => new File(['PDF'], `batch-${index}.pdf`, { type: 'application/pdf' }));
+  await choose(ten);
+  await clickButton('Upload resumes');
+  expect(element.querySelectorAll('[aria-label="Analysis resumes"] li')).toHaveLength(11);
+  expect(element.textContent).toContain('11 uploaded resumes');
+  expect(element.textContent).toContain('UPLOADED');
+  await choose([...ten, ten[0]]);
+  expect(element.textContent).toContain('Choose 1–10 PDF files');
+  expect(uploadResumes).toHaveBeenCalledTimes(2);
+  await act(async () => router.navigate('/recruiter'));
+  await act(async () => router.navigate('/recruiter/analysis/saved-analysis'));
+  expect(element.querySelectorAll('[aria-label="Analysis resumes"] li')).toHaveLength(11);
+  await choose([ten[0]]);
+  uploadResumes.mockRejectedValueOnce({ response: { data: { message: 'Upload rejected.' } } });
+  await clickButton('Upload resumes');
+  expect(element.textContent).toContain('Upload rejected.');
+  expect(element.querySelectorAll('[aria-label="Analysis resumes"] li')).toHaveLength(11);
+});
+
+test('wizard records uploaded resumes without doubling the Top-K count', async () => {
+  await mount('/recruiter/analysis/new');
+  await fillField('#analysis-jd', sampleJD);
+  await clickButton('Save JD & continue');
+  const picker = element.querySelector('#analysis-resumes');
+  Object.defineProperty(picker, 'files', { configurable: true, value: [new File(['PDF'], 'resume.pdf', { type: 'application/pdf' })] });
+  await act(async () => picker.dispatchEvent(new Event('change', { bubbles: true })));
+  uploadResumes.mockResolvedValueOnce([{ id: 'resume-1', originalFilename: 'resume.pdf', size: 3, processingStatus: 'UPLOADED' }]);
+  await clickButton('Upload resumes');
+  expect(element.textContent).toContain('1 uploaded · 0 awaiting upload');
+  expect(element.querySelector('button[aria-label="Remove resume.pdf"]')).toBeNull();
+  await clickButton('Continue');
+  await clickLink('input[value="top"]');
+  await fillField('#analysis-top-k', '2');
+  expect(element.textContent).toContain('Top-K cannot exceed the 1 selected resume');
+});
 
 test('requirements preview handles extraction failure, missing values, zero experience and recruiter review', async () => {
   await mount('/recruiter/analysis/saved-analysis');
@@ -141,10 +213,10 @@ test('JD validation prevents saving and step bypass; valid raw text is saved onc
     expect(element.textContent).toContain(`Step ${step} of 4`);
     await clickButton('Continue');
   }
-  expect(element.textContent).toContain('0 selected · not uploaded');
+  expect(element.textContent).toContain('0 selected · 0 uploaded');
   expect([...element.querySelectorAll('button')].find(button => button.textContent === 'Start analysis').disabled).toBe(true);
   await clickButton('Finish preview');
-  expect(element.textContent).toContain('Your original JD is saved. No resumes were uploaded or processed');
+  expect(element.textContent).toContain('Your original JD and uploaded resumes are saved. Resume processing has not started');
   expect(element.textContent).toContain('Not started');
   await clickButton('Back');
   expect(element.textContent).toContain('Step 3 of 4');
@@ -196,7 +268,7 @@ test('wizard preserves edits and files across steps, validates Top-K, and clears
   await clickButton('Continue');
   expect(element.textContent).toContain('Backend engineer with Node.js experience');
   expect(element.textContent).toContain('Top 1 candidates');
-  expect(element.textContent).toContain('1 selected · not uploaded');
+  expect(element.textContent).toContain('1 selected · 0 uploaded');
   await clickButton('Finish preview');
   await clickButton('1Job Description');
   expect(element.querySelector('#analysis-jd').value).toBe(sampleJD);

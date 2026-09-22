@@ -8,7 +8,7 @@ Saved on 2026-09-21 from the user's architecture message and attached recruiter 
 - Implement only the requested phase/task, then run appropriate checks and explain the result.
 - The user verifies each increment before authorizing the next implementation.
 - Do not build the complete architecture at once or advance through phases automatically.
-- Current checkpoint: Checkpoint 7 organizes the private Python/FastAPI service under `ai-service/app`, adds protected health and a Node health client, and preserves Checkpoint 6 JD extraction. Use `ai-service/README.md` for current startup instructions (`app.main:app` replaces `app:app`). Wait for user verification and an explicit next-checkpoint request.
+- Current checkpoint: Checkpoints 9 and 10 add bounded folder/ZIP resume ingestion and align the JD PDF picker styling. See `CHECKPOINT_9_10.md` for limits, APIs, verification and remaining boundaries. Python startup remains documented in `ai-service/README.md`. Wait for user verification and an explicit next-checkpoint request.
 
 ## Product direction
 

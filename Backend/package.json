@@ -29,6 +29,7 @@
     "passport-google-oauth20": "^2.0.0",
     "pdf-parse": "^1.1.1",
     "pdf-parser": "^1.0.5",
+    "yauzl": "3.4.0",
     "zod": "^4.3.6",
     "zod-to-json-schema": "^3.25.1"
   },

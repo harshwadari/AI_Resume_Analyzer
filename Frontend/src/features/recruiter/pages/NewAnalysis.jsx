@@ -2,10 +2,11 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, FileText, Plus, X } from 'lucide-react';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { Link } from 'react-router-dom';
-import { createAnalysis, createPdfAnalysis } from '../services/analysis.api';
+import { createAnalysis, createPdfAnalysis, uploadResumes } from '../services/analysis.api';
 import { jdTextError, JD_MAX_LENGTH } from '../utils/jdValidation';
 import { analysisDraftReducer, createAnalysisDraft, topKError } from '../state/analysisDraft';
 import RequirementsReview from '../components/RequirementsReview';
+import BulkResumeImport from '../components/BulkResumeImport';
 
 const steps = ['Job Description', 'Candidate Resumes', 'Result configuration', 'Start analysis'];
 const inputClass = 'mt-2 w-full rounded-xl border border-slate-300 bg-white/70 px-4 py-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 dark:border-white/15 dark:bg-slate-900/70 dark:text-white';
@@ -75,10 +76,25 @@ function AnalysisWizard({ recruiterId }) {
     }
   };
 
+  const uploadSelectedResumes = async () => {
+    const files = analysis.resumes.filter(file => !file.id);
+    if (!files.length || saveRequest.current) return;
+    if (files.length > 10) { setFileError('Upload at most 10 PDFs per batch.'); return; }
+    const controller = new AbortController(); saveRequest.current = controller;
+    setSaving(true); setFileError('');
+    try {
+      const resumes = await uploadResumes(state.savedAnalysis.id, files, { signal: controller.signal });
+      if (!controller.signal.aborted) dispatch({ type: 'uploadedResumes', files, resumes });
+    } catch (error) {
+      if (!controller.signal.aborted) setFileError(error.response?.data?.message || 'Could not confirm the upload. Check the saved analysis before retrying to avoid duplicates.');
+    } finally { if (!controller.signal.aborted) setSaving(false); saveRequest.current = null; }
+  };
+
   const selectResumes = event => {
     const files = Array.from(event.target.files || []);
-    const pdfs = files.filter(file => /\.pdf$/i.test(file.name));
-    setFileError(pdfs.length !== files.length ? 'Only PDF files can be selected for this preview. Other files were skipped.' : '');
+    const pdfs = files.filter(file => /\.pdf$/i.test(file.name) && (!file.type || file.type === 'application/pdf') && file.size <= 5 * 1024 * 1024);
+    setFileError(pdfs.length !== files.length ? 'Only PDF files up to 5 MB can be selected. Other files were skipped.' : '');
+    if (analysis.resumes.filter(file => !file.id).length + pdfs.length > 10) { setFileError('Select at most 10 PDFs per upload batch.'); event.target.value = ''; return; }
     dispatch({ type: 'addResumes', files: pdfs });
     event.target.value = '';
   };
@@ -87,8 +103,8 @@ function AnalysisWizard({ recruiterId }) {
     <div className="border-b border-slate-200/70 p-6 sm:p-8 dark:border-white/10">
       <p className="text-xs font-semibold uppercase tracking-widest text-fuchsia-700 dark:text-fuchsia-300">Create an analysis</p>
       <h2 id="recruiter-page-title" className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">New Candidate Analysis</h2>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-400">Save the original job description, then preview resume selection and result preferences.</p>
-      <p className="mt-4 rounded-xl bg-fuchsia-500/5 px-4 py-3 text-xs leading-6 text-slate-600 dark:text-slate-300">Only the JD is saved to your analysis. PDF JDs have their text extracted. Resume selections and result preferences remain a preview and clear when you leave or refresh.</p>
+      <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-400">Save the original job description, then upload resumes and preview result preferences.</p>
+      <p className="mt-4 rounded-xl bg-fuchsia-500/5 px-4 py-3 text-xs leading-6 text-slate-600 dark:text-slate-300">Your JD and uploaded resumes are saved to this analysis. Unuploaded selections and result preferences clear when you leave or refresh. Resume processing is not available yet.</p>
       {state.savedAnalysis && <p role="status" className="mt-3 break-all text-sm text-emerald-800 dark:text-emerald-300">JD saved as draft. Analysis ID: {state.savedAnalysis.id}. <Link to={`/recruiter/analysis/${state.savedAnalysis.id}`} className="font-semibold underline">View saved original</Link></p>}
       {state.savedAnalysis && <RequirementsReview key={state.savedAnalysis.id} analysis={state.savedAnalysis} />}
       <nav aria-label="Analysis steps" className="mt-6">
@@ -111,9 +127,9 @@ function AnalysisWizard({ recruiterId }) {
           <legend className="mb-2 font-medium">Job description source</legend>
           {[['text', 'Paste text'], ['pdf', 'Upload PDF']].map(([value, label]) => <label key={value} className="flex items-center gap-2"><input type="radio" name="jd-source" value={value} checked={sourceType === value} onChange={() => { setSourceType(value); setJdTouched(false); setSaveError(''); }} />{label}</label>)}
         </fieldset>
-        {sourceType === 'pdf' && <div className="mb-5 rounded-xl border border-dashed border-fuchsia-300 p-4 dark:border-fuchsia-500/30">
-          <label htmlFor="jd-pdf" className="text-sm font-medium">JD PDF</label>
-          <input id="jd-pdf" type="file" accept=".pdf,application/pdf" disabled={saving || Boolean(state.savedAnalysis)} className="mt-3 block w-full text-sm" onChange={event => {
+        {sourceType === 'pdf' && <div className="mb-5 rounded-2xl border border-dashed border-fuchsia-300 bg-fuchsia-500/5 p-5 sm:p-6 dark:border-fuchsia-500/30">
+          <label htmlFor="jd-pdf" className="flex items-center gap-2 text-sm font-semibold"><Plus size={17} aria-hidden="true" />Choose JD PDF</label>
+          <input id="jd-pdf" type="file" accept=".pdf,application/pdf" disabled={saving || Boolean(state.savedAnalysis)} className="mt-4 block w-full min-w-0 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-fuchsia-600 file:px-4 file:py-2 file:font-medium file:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-500/30" onChange={event => {
             const file = event.target.files?.[0];
             setJdPdf(null); setJdTouched(false); setSaveError('');
             if (!file) return;
@@ -138,21 +154,24 @@ function AnalysisWizard({ recruiterId }) {
       </div>}
 
       {step === 1 && <div className="mt-5">
-        <p className="text-sm leading-7 text-slate-600 dark:text-slate-400">Choose one or more resume PDFs to preview your selection. You can also continue without files.</p>
+        <p className="text-sm leading-7 text-slate-600 dark:text-slate-400">Choose up to 10 resume PDFs per upload batch, each 5 MB or smaller. You can also continue without files.</p>
         <div className="mt-4 rounded-2xl border border-dashed border-fuchsia-300 bg-fuchsia-500/5 p-5 sm:p-6 dark:border-fuchsia-500/30">
           <label htmlFor="analysis-resumes" className="flex items-center gap-2 text-sm font-semibold"><Plus size={17} aria-hidden="true" />Select resume PDFs</label>
-          <input id="analysis-resumes" type="file" accept=".pdf,application/pdf" multiple onChange={selectResumes} aria-describedby="analysis-files-help" className="mt-4 block w-full min-w-0 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-fuchsia-600 file:px-4 file:py-2 file:font-medium file:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-500/30" />
-          <p id="analysis-files-help" className="mt-3 text-xs leading-6 text-slate-600 dark:text-slate-400">Files stay on your device. No text extraction or upload takes place. Folder and ZIP selection are coming later.</p>
+          <input id="analysis-resumes" type="file" accept=".pdf,application/pdf" multiple disabled={saving} onChange={selectResumes} aria-describedby="analysis-files-help" className="mt-4 block w-full min-w-0 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-fuchsia-600 file:px-4 file:py-2 file:font-medium file:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-500/30" />
+          <p id="analysis-files-help" className="mt-3 text-xs leading-6 text-slate-600 dark:text-slate-400">Click Upload resumes to save the selected PDFs privately. Use the folder or ZIP import below for larger selections.</p>
         </div>
         {fileError && <p role="alert" className="mt-3 text-sm text-rose-700 dark:text-rose-300">{fileError}</p>}
         <p aria-live="polite" className="mt-5 text-sm font-medium">{analysis.resumes.length} resume{analysis.resumes.length === 1 ? '' : 's'} selected</p>
         <ul className="mt-3 space-y-2">
-          {analysis.resumes.map((file, index) => <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 dark:border-white/10">
+          {analysis.resumes.map((file, index) => <li key={file.id || `${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 dark:border-white/10">
             <FileText size={18} className="shrink-0 text-fuchsia-600 dark:text-fuchsia-300" aria-hidden="true" />
-            <span className="min-w-0 flex-1 break-all text-sm">{file.name}<span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{Math.max(1, Math.round(file.size / 1024))} KB</span></span>
-            <button type="button" aria-label={`Remove ${file.name}`} onClick={() => dispatch({ type: 'removeResume', index })} className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-500/30"><X size={18} aria-hidden="true" /></button>
+            <span className="min-w-0 flex-1 break-all text-sm">{file.name}{file.id && <span className="ml-2 font-semibold text-emerald-700 dark:text-emerald-300">{file.processingStatus}</span>}<span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{Math.max(1, Math.round(file.size / 1024))} KB</span></span>
+            {!file.id && <button type="button" disabled={saving} aria-label={`Remove ${file.name}`} onClick={() => dispatch({ type: 'removeResume', index })} className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-500/30"><X size={18} aria-hidden="true" /></button>}
           </li>)}
         </ul>
+        <button type="button" disabled={saving || !analysis.resumes.some(file => !file.id)} onClick={uploadSelectedResumes} className={`${buttonClass} mt-4 bg-fuchsia-600 text-white disabled:opacity-50`}>{saving ? 'Uploading resumes…' : 'Upload resumes'}</button>
+        <p role="status" className="mt-3 text-sm">{analysis.resumes.filter(file => file.id).length} uploaded · {analysis.resumes.filter(file => !file.id).length} awaiting upload</p>
+        <BulkResumeImport analysisId={state.savedAnalysis.id} disabled={saving} onBusyChange={setSaving} onImported={resumes => dispatch({ type: 'importedResumes', resumes })} />
       </div>}
 
       {step === 2 && <div className="mt-5 space-y-6">
@@ -178,15 +197,15 @@ function AnalysisWizard({ recruiterId }) {
         <p className="text-sm leading-7 text-slate-600 dark:text-slate-400">Review your draft before completing the preview. You can go back to edit any section.</p>
         <dl className="mt-5 grid gap-5 rounded-2xl border border-slate-200 p-5 sm:grid-cols-2 dark:border-white/10">
           <div><dt className="text-xs text-slate-500 dark:text-slate-400">Job description</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm">{analysis.jd.text.trim() ? `${analysis.jd.text.trim().slice(0, 220)}${analysis.jd.text.trim().length > 220 ? '…' : ''}` : 'Not provided'}</dd></div>
-          <div><dt className="text-xs text-slate-500 dark:text-slate-400">Candidate resumes</dt><dd className="mt-1 text-sm">{analysis.resumes.length} selected · not uploaded</dd></div>
+          <div><dt className="text-xs text-slate-500 dark:text-slate-400">Candidate resumes</dt><dd className="mt-1 text-sm">{analysis.resumes.length} selected · {analysis.resumes.filter(file => file.id).length} uploaded</dd></div>
           <div><dt className="text-xs text-slate-500 dark:text-slate-400">Requested results</dt><dd className="mt-1 text-sm">{analysis.requestedTopK === null ? 'All candidates' : `Top ${analysis.requestedTopK} candidates`}</dd></div>
           <div><dt className="text-xs text-slate-500 dark:text-slate-400">Processing state</dt><dd className="mt-1 text-sm">Not started</dd></div>
         </dl>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button type="button" disabled aria-describedby="analysis-start-help" className={`${buttonClass} bg-slate-500/15`}>Start analysis</button>
-          <p id="analysis-start-help" className="text-xs leading-6 text-slate-600 dark:text-slate-400">Your JD is saved. Resume processing and saving result preferences are not available yet.</p>
+          <p id="analysis-start-help" className="text-xs leading-6 text-slate-600 dark:text-slate-400">Your JD and uploaded resumes are saved. Resume processing and saving result preferences are not available yet.</p>
         </div>
-        {state.previewComplete && <div role="status" className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-800 dark:text-emerald-300"><Check size={19} className="mt-0.5 shrink-0" aria-hidden="true" />Preview complete. Your original JD is saved. No resumes were uploaded or processed, and result preferences are not saved.</div>}
+        {state.previewComplete && <div role="status" className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-800 dark:text-emerald-300"><Check size={19} className="mt-0.5 shrink-0" aria-hidden="true" />Preview complete. Your original JD and uploaded resumes are saved. Resume processing has not started, and result preferences are not saved.</div>}
       </div>}
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-6 dark:border-white/10">

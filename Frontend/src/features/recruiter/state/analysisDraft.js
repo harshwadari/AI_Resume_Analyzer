@@ -1,4 +1,4 @@
-// Page-local draft only. File references are never uploaded or persisted here.
+// Page-local selection and result preferences; uploaded entries retain server IDs.
 export function createAnalysisDraft(recruiterId) {
   return {
     step: 0,
@@ -52,6 +52,16 @@ export function analysisDraftReducer(state, action) {
         if (!resumes.some(item => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) resumes.push(file);
       }
       return syncRequestedTopK({ ...state, previewComplete: false, analysis: { ...analysis, resumes } });
+    }
+    case 'uploadedResumes':
+      return { ...state, analysis: { ...analysis, resumes: analysis.resumes.map(file => {
+        const index = action.files.indexOf(file);
+        return index < 0 ? file : { ...action.resumes[index], name: file.name, lastModified: file.lastModified };
+      }) } };
+    case 'importedResumes': {
+      const resumes = [...analysis.resumes];
+      action.resumes.forEach(item => { if (!resumes.some(file => file.id === item.id)) resumes.push({ ...item, name: item.originalFilename }); });
+      return syncRequestedTopK({ ...state, analysis: { ...analysis, resumes } });
     }
     case 'removeResume':
       return syncRequestedTopK({ ...state, previewComplete: false, analysis: { ...analysis, resumes: analysis.resumes.filter((_, index) => index !== action.index) } });

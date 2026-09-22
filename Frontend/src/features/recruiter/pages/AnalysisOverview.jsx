@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { getAnalysis, downloadOriginal } from '../services/analysis.api';
 import RequirementsReview from '../components/RequirementsReview';
+import ResumeUploads from '../components/ResumeUploads';
 
 export default function AnalysisOverview() {
   const { analysisId } = useParams();
@@ -48,6 +49,7 @@ function SavedAnalysis({ analysisId }) {
         <div><dt className="text-slate-500 dark:text-slate-400">Status</dt><dd className="mt-1">Draft · processing not started</dd></div>
       </dl>
       <RequirementsReview key={state.analysis.id} analysis={state.analysis} />
+      <ResumeUploads key={`resumes-${state.analysis.id}`} analysisId={state.analysis.id} />
       <h3 className="mt-8 text-lg font-semibold">Original job description</h3>
       <p className="mt-2 text-xs leading-6 text-slate-600 dark:text-slate-400">{state.analysis.sourceType === 'pdf' ? 'Text extracted from your original PDF. The preserved PDF remains the source of truth.' : 'Saved exactly as submitted. This read-only original remains the source of truth.'}</p>
       {state.analysis.originalFile && <div className="mt-3 text-sm"><p>Text extraction: {state.analysis.extractionStatus}</p><button type="button" disabled={downloading} onClick={download} className="mt-2 break-all font-semibold text-fuchsia-700 underline disabled:opacity-50 dark:text-fuchsia-300">{downloading ? 'Downloading…' : `Download original PDF: ${state.analysis.originalFile.name}`}</button></div>}
