@@ -4,4 +4,4 @@ httpx==0.28.1
 uvicorn==0.40.0
 celery[redis]==5.6.3
 pymongo==4.18.1
-pypdf==6.19.0
+PyMuPDF==1.28.2

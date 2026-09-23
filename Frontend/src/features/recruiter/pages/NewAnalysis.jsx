@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, FileText, Plus, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ClipboardPaste, FileText, FileUp, Plus, X } from 'lucide-react';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { Link } from 'react-router-dom';
 import { createAnalysis, createPdfAnalysis, uploadResumes } from '../services/analysis.api';
@@ -10,6 +10,10 @@ import BulkResumeImport from '../components/BulkResumeImport';
 import ProcessingProgress from '../components/ProcessingProgress';
 
 const steps = ['Job Description', 'Candidate Resumes', 'Result configuration', 'Start analysis'];
+const jdSources = [
+  { value: 'text', label: 'Paste text', description: 'Copy and paste your job description.', icon: ClipboardPaste },
+  { value: 'pdf', label: 'Upload PDF', description: 'Choose a PDF document up to 5 MB.', icon: FileUp },
+];
 const inputClass = 'mt-2 w-full rounded-xl border border-slate-300 bg-white/70 px-4 py-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 dark:border-white/15 dark:bg-slate-900/70 dark:text-white';
 const buttonClass = 'inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-500/30 disabled:cursor-not-allowed disabled:opacity-50';
 
@@ -124,9 +128,28 @@ function AnalysisWizard({ recruiterId }) {
       <h3 ref={heading} tabIndex={-1} className="mt-2 text-xl font-semibold outline-none">{steps[step]}</h3>
 
       {step === 0 && <div className="mt-5">
-        <fieldset disabled={saving || Boolean(state.savedAnalysis)} className="mb-5 flex gap-5 text-sm">
-          <legend className="mb-2 font-medium">Job description source</legend>
-          {[['text', 'Paste text'], ['pdf', 'Upload PDF']].map(([value, label]) => <label key={value} className="flex items-center gap-2"><input type="radio" name="jd-source" value={value} checked={sourceType === value} onChange={() => { setSourceType(value); setJdTouched(false); setSaveError(''); }} />{label}</label>)}
+        <fieldset disabled={saving || Boolean(state.savedAnalysis)} className="mb-6 min-w-0">
+          <legend className="mb-3 text-sm font-semibold">Job description source</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {jdSources.map(({ value, label, description, icon: Icon }) => {
+              const selected = sourceType === value;
+              return <label key={value} className="relative block">
+                <input type="radio" name="jd-source" value={value} checked={selected}
+                  aria-labelledby={`jd-source-${value}-label`} aria-describedby={`jd-source-${value}-help`}
+                  onChange={() => { setSourceType(value); setJdTouched(false); setSaveError(''); }} className="peer sr-only" />
+                <span className="flex h-full cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white/50 p-4 transition hover:border-fuchsia-300 hover:bg-fuchsia-50/50 peer-checked:border-fuchsia-500 peer-checked:bg-fuchsia-50 peer-checked:shadow-sm peer-focus-visible:ring-4 peer-focus-visible:ring-fuchsia-500/25 peer-disabled:cursor-not-allowed peer-disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-fuchsia-500/40 dark:hover:bg-fuchsia-500/5 dark:peer-checked:border-fuchsia-400/70 dark:peer-checked:bg-fuchsia-500/10">
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${selected ? 'bg-fuchsia-600 text-white shadow-sm shadow-fuchsia-500/20 dark:bg-fuchsia-500' : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'}`}>
+                    <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span id={`jd-source-${value}-label`} className={`block text-sm font-semibold ${selected ? 'text-fuchsia-900 dark:text-fuchsia-100' : 'text-slate-800 dark:text-slate-200'}`}>{label}</span>
+                    <span id={`jd-source-${value}-help`} className="mt-1 block text-xs leading-5 text-slate-600 dark:text-slate-400">{description}</span>
+                  </span>
+                  <Check size={17} strokeWidth={2.5} aria-hidden="true" className={`mt-0.5 shrink-0 text-fuchsia-600 transition-opacity dark:text-fuchsia-300 ${selected ? 'opacity-100' : 'opacity-0'}`} />
+                </span>
+              </label>;
+            })}
+          </div>
         </fieldset>
         {sourceType === 'pdf' && <div className="mb-5 rounded-2xl border border-dashed border-fuchsia-300 bg-fuchsia-500/5 p-5 sm:p-6 dark:border-fuchsia-500/30">
           <label htmlFor="jd-pdf" className="flex items-center gap-2 text-sm font-semibold"><Plus size={17} aria-hidden="true" />Choose JD PDF</label>

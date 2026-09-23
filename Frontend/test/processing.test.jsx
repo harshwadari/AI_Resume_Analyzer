@@ -66,3 +66,17 @@ test('slow progress requests never overlap and unmount cancels polling', async (
   await act(async () => resolve(job(100)));
   root = createRoot(element);
 });
+
+test('OCR-required resumes finish progress and are clearly distinguished from extraction failures', async () => {
+  getProcessingProgress.mockResolvedValue({ ...job(100), processed: 99, ocrRequired: 1, status: 'COMPLETED_WITH_ERRORS' });
+  listResumes.mockResolvedValue({ total: 1, page: 1, pageSize: 50, resumes: [{ id: 'scanned', originalFilename: 'scanned-resume.pdf',
+    size: 300, processingStatus: 'OCR_REQUIRED', attempts: 1, processingError: null, createdAt: new Date().toISOString() }] });
+  await act(async () => root.render(<ResumeUploads analysisId="analysis" />)); await tick();
+  expect(element.textContent).toContain('100/100 (100%)');
+  expect(element.textContent).toContain('99 extracted · 1 need OCR · 0 failed');
+  expect(element.textContent).toContain('scanned-resume.pdf');
+  expect(element.textContent).toContain('OCR_REQUIRED');
+  expect(element.textContent).toContain('OCR required: no usable text was found.');
+  expect(element.textContent).toContain('Automatic OCR is not available yet.');
+  expect(element.textContent).not.toContain('1 file failed.');
+});

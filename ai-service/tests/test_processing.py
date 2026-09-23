@@ -11,6 +11,11 @@ from bson import ObjectId
 from app.services import processing as work
 
 
+def extracted(text='Candidate skills'):
+    return {'rawText': text, 'pages': [{'pageNumber': 1, 'text': text}],
+            'documentMetadata': {'pageCount': 1}, 'extractionStatus': 'PROCESSED' if text else 'OCR_REQUIRED'}
+
+
 class ProcessingTests(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient(tz_aware=True).test
@@ -23,7 +28,7 @@ class ProcessingTests(unittest.TestCase):
         self.mock_db.start()
         self.addCleanup(self.mock_db.stop)
 
-    def run_one(self, parser=lambda _: 'Candidate skills'):
+    def run_one(self, parser=lambda _: extracted()):
         return work.process_one(str(self.job), str(self.resume), parser)
 
     def test_duplicate_and_active_lease_skip_parser(self):
@@ -53,8 +58,8 @@ class ProcessingTests(unittest.TestCase):
     def test_expired_lease_recovers_and_stale_worker_cannot_overwrite(self):
         def parser(_):
             self.db.resumes.update_one({}, {'$set': {'leaseUntil': work.now() - timedelta(seconds=1)}})
-            self.run_one(lambda _: 'new worker result')
-            return 'stale worker result'
+            self.run_one(lambda _: extracted('new worker result'))
+            return extracted('stale worker result')
         self.run_one(parser)
         self.assertEqual(self.db.resumes.find_one()['rawText'], 'new worker result')
 
@@ -102,7 +107,35 @@ class ProcessingTests(unittest.TestCase):
             key = f'{uuid4()}.pdf'
             (Path(folder) / key).write_bytes(pdf)
             with patch.dict('os.environ', {'RESUME_STORAGE_DIR': folder}):
-                self.assertIn('Senior Engineer', work.parse_resume({'storageReference': key}))
+                result = work.parse_resume({'storageReference': key})
+                self.assertIn('Senior Engineer', result.rawText)
+                self.assertEqual(result.pages[0].text, result.rawText)
+                self.assertEqual(result.documentMetadata.pageCount, 1)
+
+    def test_ocr_required_is_persisted_terminal_and_never_automatically_retried(self):
+        self.run_one(lambda _: extracted(''))
+        row = self.db.resumes.find_one()
+        self.assertEqual(row['processingStatus'], 'OCR_REQUIRED')
+        self.assertEqual(row['rawText'], '')
+        self.assertEqual(row['pages'], [{'pageNumber': 1, 'text': ''}])
+        self.assertEqual(row['documentMetadata']['pageCount'], 1)
+        self.assertEqual(row['parserVersion'], work.PARSER_VERSION)
+        self.assertIn('processedAt', row)
+        self.assertNotIn('processingError', row)
+        self.assertEqual(self.db.processingjobs.find_one()['status'], 'COMPLETED_WITH_ERRORS')
+        with patch.object(work, 'parse_resume') as parser, patch.object(work.process_resume, 'apply_async') as publish:
+            self.assertEqual(self.run_one(parser), 'SKIPPED')
+            work.reconcile()
+            work.dispatch_job(str(self.job))
+            parser.assert_not_called()
+            publish.assert_not_called()
+
+    def test_invalid_parser_output_never_enters_database(self):
+        self.run_one(lambda _: {**extracted(), 'pages': []})
+        row = self.db.resumes.find_one()
+        self.assertEqual(row['processingStatus'], 'FAILED')
+        self.assertNotIn('rawText', row)
+        self.assertNotIn('pages', row)
 
     def test_parser_timeout_terminates_the_subprocess(self):
         with tempfile.TemporaryDirectory() as folder:

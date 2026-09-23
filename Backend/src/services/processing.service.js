@@ -17,9 +17,10 @@ async function progress(recruiter, analysisId) {
     ]);
     const counts = Object.fromEntries(groups.map(item => [item._id, item.count]));
     const processed = counts.PROCESSED || 0, failed = counts.FAILED || 0, total = job.resumeIds.length;
-    const completed = processed + failed;
-    const status = completed === total ? failed ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED' : job.status;
-    return { job: { id: job.id, total, completed, processed, failed, processing: counts.PROCESSING || 0,
+    const ocrRequired = counts.OCR_REQUIRED || 0;
+    const completed = processed + failed + ocrRequired;
+    const status = completed === total ? (failed || ocrRequired) ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED' : job.status;
+    return { job: { id: job.id, total, completed, processed, failed, ocrRequired, processing: counts.PROCESSING || 0,
         queued: counts.UPLOADED || 0, status, dispatchError: completed === total ? null : job.dispatchError || null, createdAt: job.createdAt } };
 }
 

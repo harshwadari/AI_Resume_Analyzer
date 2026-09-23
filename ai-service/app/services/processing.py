@@ -1,4 +1,3 @@
-import json
 import os
 import re
 import subprocess
@@ -11,8 +10,9 @@ from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 from app.core.celery_app import celery
 from app.core.database import database
+from app.models.resume_extraction import ResumeExtraction
 
-PARSER_VERSION = 'resume-text-v1'
+PARSER_VERSION = 'resume-text-v2-pymupdf'
 MAX_ATTEMPTS = 3
 PARSER_TIMEOUT_SECONDS = 35
 
@@ -52,18 +52,14 @@ def parse_resume(record):
     finally:
         process.stdout.close()
     if process.returncode:
-        raise ValueError('PDF is unreadable, encrypted, empty, or exceeds processing limits.')
-    payload = json.loads(output)
-    text = payload.get('text')
-    if not isinstance(text, str) or not text.strip() or len(text) > 100050:
-        raise ValueError('Invalid extracted text')
-    return text
+        raise ValueError('PDF is unreadable, encrypted, or exceeds processing limits.')
+    return ResumeExtraction.model_validate_json(output)
 
 
 def finish_job(db, job):
     query = {'jobId': job['_id'], '_id': {'$in': job['resumeIds']}}
     if db.resumes.count_documents({**query, 'processingStatus': {'$in': ['UPLOADED', 'PROCESSING']}}) == 0:
-        failed = db.resumes.count_documents({**query, 'processingStatus': 'FAILED'})
+        failed = db.resumes.count_documents({**query, 'processingStatus': {'$in': ['FAILED', 'OCR_REQUIRED']}})
         db.processingjobs.update_one({'_id': job['_id']}, {'$set': {'status': 'COMPLETED_WITH_ERRORS' if failed else 'COMPLETED', 'updatedAt': now()}, '$unset': {'dispatchError': ''}})
 
 
@@ -91,8 +87,9 @@ def process_one(job_id, resume_id, parser=None):
     try:
         if record['attempts'] > MAX_ATTEMPTS:
             raise ValueError('Processing retry limit reached.')
-        text = (parser or parse_resume)(record)
-        db.resumes.update_one(query, {'$set': {'processingStatus': 'PROCESSED', 'rawText': text, 'processedAt': now(), 'parserVersion': PARSER_VERSION, 'updatedAt': now()},
+        extraction = ResumeExtraction.model_validate((parser or parse_resume)(record))
+        db.resumes.update_one(query, {'$set': {**extraction.model_dump(exclude={'extractionStatus'}),
+                                             'processingStatus': extraction.extractionStatus, 'processedAt': now(), 'parserVersion': PARSER_VERSION, 'updatedAt': now()},
                                      '$unset': {'processingError': '', 'leaseUntil': '', 'claimToken': '', 'nextAttemptAt': ''}})
     except (OSError, subprocess.TimeoutExpired):
         terminal = record['attempts'] >= MAX_ATTEMPTS
@@ -103,7 +100,7 @@ def process_one(job_id, resume_id, parser=None):
         if not terminal:
             return 'RETRY'
     except (ValueError, KeyError):
-        db.resumes.update_one(query, {'$set': {'processingStatus': 'FAILED', 'processingError': 'PDF is unreadable, encrypted, empty, or exceeds processing limits.', 'updatedAt': now()},
+        db.resumes.update_one(query, {'$set': {'processingStatus': 'FAILED', 'processingError': 'PDF is unreadable, encrypted, or exceeds processing limits.', 'updatedAt': now()},
                                      '$unset': {'leaseUntil': '', 'claimToken': ''}})
     finish_job(db, job)
     return 'DONE'

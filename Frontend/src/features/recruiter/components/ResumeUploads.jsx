@@ -72,6 +72,7 @@ export default function ResumeUploads({ analysisId }) {
       <ul className="mt-3 space-y-3">{state.resumes.map(resume => <li key={resume.id} className="rounded-xl bg-slate-500/5 p-3 text-sm">
         <p className="break-all font-medium">{resume.originalFilename}</p>
         <p className="mt-1">{resume.processingStatus} · {Math.ceil(resume.size / 1024)} KB</p>
+        {resume.processingStatus === 'OCR_REQUIRED' && <p className="mt-1 text-amber-800 dark:text-amber-300">OCR required: no usable text was found. Upload a text-based PDF to extract this resume’s text. Automatic OCR is not available yet.</p>}
         {resume.processingError && <p className="mt-1 text-rose-700 dark:text-rose-300">{resume.processingError} (Attempts: {resume.attempts})</p>}
         <p className="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">ID: {resume.id} · {new Date(resume.createdAt).toLocaleString()}</p>
       </li>)}</ul>

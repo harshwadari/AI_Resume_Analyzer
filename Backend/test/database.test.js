@@ -62,7 +62,7 @@ async function request(path, { body, cookie, headers = {}, method = body === und
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
 
-test('Checkpoint 11: upload 100 PDFs through HTTP, queue, process, poll 0/100 to 100/100, isolate failures and retry', { skip: process.env.CHECKPOINT11_QUEUE_TEST !== '1', timeout: 240000 }, async () => {
+test('Checkpoint 11/12: 100-PDF queue, retries, page extraction, metadata and image-only OCR status', { skip: process.env.CHECKPOINT11_QUEUE_TEST !== '1', timeout: 240000 }, async () => {
     const net = require('node:net'), path = require('node:path');
     const fs = require('node:fs/promises');
     const Resume = require('../src/models/resume.model');
@@ -76,7 +76,8 @@ test('Checkpoint 11: upload 100 PDFs through HTTP, queue, process, poll 0/100 to
     process.env.AI_SERVICE_URL = `http://127.0.0.1:${port}`;
     process.env.AI_SERVICE_TOKEN = crypto.randomBytes(32).toString('hex');
     const aiDir = path.resolve(__dirname, '../../ai-service');
-    const child = require('node:child_process').spawn(process.env.TEST_PYTHON || path.join(aiDir, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'), ['-m', 'tests.queue_harness'], {
+    const python = process.env.TEST_PYTHON || path.join(aiDir, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    const child = require('node:child_process').spawn(python, ['-m', 'tests.queue_harness'], {
         cwd: aiDir, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, MONGO_URI: database.getUri(), MONGO_DB_NAME: 'authentication-tests', TEST_AI_PORT: String(port) },
     });
@@ -150,15 +151,23 @@ test('Checkpoint 11: upload 100 PDFs through HTTP, queue, process, poll 0/100 to
         });
         assert.ok(observed.size > 2, 'must observe intermediate progress');
         assert.ok(maxProcessing > 0);
-        const rows = await Resume.find({ analysis: analysisId }).select('+rawText +storageReference');
+        const rows = await Resume.find({ analysis: analysisId }).select('+rawText +pages +documentMetadata +storageReference');
         assert.ok(rows.every(row => row.processingStatus === 'PROCESSED' && row.attempts === 1 && row.rawText.includes('Senior Engineer')));
+        assert.ok(rows.every(row => row.pages.length === 1 && row.pages[0].pageNumber === 1 && row.pages[0].text === row.rawText && row.documentMetadata.pageCount === 1));
+        assert.ok(rows.every(row => row.parserVersion === 'resume-text-v2-pymupdf' && row.processedAt instanceof Date));
         for (const row of rows) await fs.access(path.join(process.env.RESUME_STORAGE_DIR, row.storageReference));
         assert.equal((await request(endpoint, { cookie: cookieFor(other) })).status, 404);
-        // A readable PDF with no text must be identified by filename as a failure.
-        const blank = new FormData(); blank.append('resumes', new Blob([require('./pdf-fixture')('')], { type: 'application/pdf' }), 'empty-resume.pdf');
+        // Corrupt a synthetic stored fixture to exercise a genuine parser failure.
+        // Empty/image-only PDFs now have their own OCR_REQUIRED outcome.
+        const blank = new FormData(); blank.append('resumes', new Blob([require('./pdf-fixture')()], { type: 'application/pdf' }), 'unreadable-resume.pdf');
         const added = await fetch(`${apiBase}/api/recruiter/analyses/${analysisId}/resumes`, { method: 'POST', body: blank,
             headers: { Cookie: cookie, Origin: process.env.FRONTEND_URL, 'X-Requested-With': 'XMLHttpRequest' } });
         assert.equal(added.status, 201);
+        const badId = (await added.json()).resumes[0].id;
+        const badResume = await Resume.findById(badId).select('+storageReference');
+        const badPath = path.resolve(process.env.RESUME_STORAGE_DIR, badResume.storageReference);
+        assert.ok(badPath.startsWith(path.resolve(jdStorageDir) + path.sep));
+        await fs.writeFile(badPath, 'Damaged synthetic PDF');
         const aiClient = require('../src/services/ai-client.service');
         const sendToAI = aiClient.request;
         let newJob;
@@ -172,13 +181,58 @@ test('Checkpoint 11: upload 100 PDFs through HTTP, queue, process, poll 0/100 to
         assert.equal(recovered.body.job.id, newJob.body.job.id);
         await waitFor(async () => (await request(endpoint, { cookie })).body.job.failed === 1);
         const page = (await request(`/api/recruiter/analyses/${analysisId}/resumes?page=3`, { cookie })).body;
-        assert.equal(page.resumes[0].originalFilename, 'empty-resume.pdf');
+        assert.equal(page.resumes[0].originalFilename, 'unreadable-resume.pdf');
         assert.equal(page.resumes[0].processingStatus, 'FAILED'); assert.ok(page.resumes[0].processingError);
         const retried = await request(endpoint, { cookie, body: { retryFailed: true } });
         assert.equal(retried.body.job.total, 1); assert.notEqual(retried.body.job.id, newJob.body.job.id);
         await waitFor(async () => (await request(endpoint, { cookie })).body.job.failed === 1);
         assert.equal(await Resume.countDocuments({ analysis: analysisId, processingStatus: 'PROCESSED', attempts: 1 }), 100);
         console.log(`Checkpoint 11: ${observed.size} progress snapshots from 0/100 to 100/100; max active=${maxProcessing}; failure and retry verified. Broker=${process.env.TEST_REDIS_SERVER ? output.match(/REDIS_VERSION=([^\r\n]+)/)?.[1] : 'fakeredis TCP'}, worker=Celery, DB=real isolated Mongo.`);
+
+        const { stdout } = await require('node:util').promisify(require('node:child_process').execFile)(python, ['-m', 'tests.resume_pdf_fixtures'], { cwd: aiDir, windowsHide: true, timeout: 10000 });
+        const fixtures = JSON.parse(stdout);
+        const extractionAnalysis = (await request('/api/recruiter/analyses', { cookie, body: { rawJDText: 'Extraction verification: hire an engineer experienced with Python services, MongoDB, reliable APIs, code review and team collaboration.' } })).body.analysis.id;
+        const extractionEndpoint = `/api/recruiter/analyses/${extractionAnalysis}/processing`;
+        const resumesEndpoint = `/api/recruiter/analyses/${extractionAnalysis}/resumes`;
+        const fixtureForm = new FormData();
+        for (const [name, base64] of Object.entries(fixtures)) fixtureForm.append('resumes', new Blob([Buffer.from(base64, 'base64')], { type: 'application/pdf' }), `${name}-resume.pdf`);
+        const fixtureUpload = await fetch(apiBase + resumesEndpoint, { method: 'POST', body: fixtureForm,
+            headers: { Cookie: cookie, Origin: process.env.FRONTEND_URL, 'X-Requested-With': 'XMLHttpRequest' } });
+        assert.equal(fixtureUpload.status, 201);
+        const extractionStart = await request(extractionEndpoint, { cookie, body: {} });
+        assert.equal(extractionStart.status, 202); assert.equal(extractionStart.body.job.total, 2);
+        await waitFor(async () => (await request(extractionEndpoint, { cookie })).body.job.completed === 2);
+        const final = (await request(extractionEndpoint, { cookie })).body.job;
+        assert.equal(final.processed, 1); assert.equal(final.ocrRequired, 1); assert.equal(final.failed, 0);
+        assert.equal(final.status, 'COMPLETED_WITH_ERRORS'); assert.equal(final.queued, 0);
+        const stored = await Resume.find({ analysis: extractionAnalysis }).select('+rawText +pages +documentMetadata +storageReference');
+        const textResume = stored.find(row => row.originalFilename === 'text-resume.pdf');
+        assert.equal(textResume.processingStatus, 'PROCESSED');
+        assert.deepEqual(textResume.pages.map(page => page.pageNumber), [1, 2, 3]);
+        assert.equal(textResume.pages[1].text, '');
+        assert.match(textResume.pages[0].text, /Jose Garcia/);
+        assert.match(textResume.pages[2].text, /Skills: Python, MongoDB, Node.js/);
+        assert.match(textResume.pages[2].text, /Español/);
+        assert.equal(textResume.rawText, textResume.pages.map(page => page.text).join('\f'));
+        assert.equal(textResume.documentMetadata.title, 'Synthetic Resume');
+        assert.equal(textResume.documentMetadata.author, 'Test Candidate');
+        assert.equal(textResume.documentMetadata.pageCount, 3);
+        const imageResume = stored.find(row => row.originalFilename === 'image-resume.pdf');
+        assert.equal(imageResume.processingStatus, 'OCR_REQUIRED'); assert.equal(imageResume.rawText, '');
+        assert.equal(imageResume.pages[0].pageNumber, 1); assert.equal(imageResume.pages[0].text, '');
+        assert.equal(imageResume.documentMetadata.pageCount, 1);
+        for (const row of stored) {
+            assert.equal(row.attempts, 1); assert.ok(row.processedAt);
+            const name = row.originalFilename.split('-')[0];
+            assert.deepEqual(await fs.readFile(path.join(process.env.RESUME_STORAGE_DIR, row.storageReference)), Buffer.from(fixtures[name], 'base64'));
+        }
+        const listed = (await request(resumesEndpoint, { cookie })).body.resumes;
+        assert.equal(listed.find(row => row.id === imageResume.id).processingStatus, 'OCR_REQUIRED');
+        assert.ok(listed.every(row => !('rawText' in row) && !('pages' in row) && !('documentMetadata' in row)));
+        const retryOcr = await request(extractionEndpoint, { cookie, body: { retryFailed: true } });
+        assert.equal(retryOcr.body.job.id, final.id, 'OCR-required files must not be queued as transient failures');
+        assert.equal(await Job.countDocuments({ analysis: extractionAnalysis }), 1);
+        console.log('Checkpoint 12: text/blank/rotated pages and metadata stored; image-only PDF OCR_REQUIRED; 2/2 complete, 1 extracted, 1 needs OCR, 0 failed; original bytes unchanged.');
     } finally {
         child.stdin.end('stop\n');
         await Promise.race([new Promise(resolve => child.once('exit', resolve)), new Promise(resolve => setTimeout(resolve, 25000))]);
@@ -186,6 +240,47 @@ test('Checkpoint 11: upload 100 PDFs through HTTP, queue, process, poll 0/100 to
         if (savedUrl === undefined) delete process.env.AI_SERVICE_URL; else process.env.AI_SERVICE_URL = savedUrl;
         if (savedToken === undefined) delete process.env.AI_SERVICE_TOKEN; else process.env.AI_SERVICE_TOKEN = savedToken;
     }
+});
+
+test('HTTP: OCR status completes progress separately from failures, remains private and is excluded from retries', async () => {
+    const Resume = require('../src/models/resume.model'), Job = require('../src/models/processingJob.model');
+    const owner = await User.create({ username: 'ocr-owner', email: 'ocr-owner@example.com', password: 'ExamplePass9', isVerified: true });
+    const other = await User.create({ username: 'ocr-other', email: 'ocr-other@example.com', password: 'ExamplePass9', isVerified: true });
+    const cookieFor = user => 'token=' + require('jsonwebtoken').sign({ id: user.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,
+        { algorithm: 'HS256', issuer: 'prepwise', audience: 'prepwise-web', expiresIn: '1h' });
+    const cookie = cookieFor(owner);
+    const analysis = (await request('/api/recruiter/analyses', { cookie, body: { rawJDText: 'OCR progress test job description: build reliable Python and Node.js services with MongoDB, review code, write tests and collaborate with a team.' } })).body.analysis.id;
+    const statuses = ['PROCESSED', 'OCR_REQUIRED', 'FAILED', 'UPLOADED'];
+    const rows = await Resume.create(statuses.map(processingStatus => ({ analysis, recruiter: owner.id, processingStatus,
+        originalFilename: `${processingStatus}.pdf`, storageReference: `${crypto.randomUUID()}.pdf`, size: 100,
+        rawText: processingStatus === 'PROCESSED' ? 'Candidate skills' : '',
+        pages: [{ pageNumber: 1, text: processingStatus === 'PROCESSED' ? 'Candidate skills' : '' }], documentMetadata: { pageCount: 1 } })));
+    const job = await Job.create({ analysis, recruiter: owner.id, resumeIds: rows.map(row => row.id) });
+    await Resume.updateMany({ analysis }, { $set: { jobId: job.id } });
+    await require('../src/models/analysis.model').updateOne({ _id: analysis }, { $set: { processingJobId: job.id } });
+    const endpoint = `/api/recruiter/analyses/${analysis}/processing`;
+    assert.equal((await request(endpoint)).status, 401);
+    assert.equal((await request(endpoint, { cookie: cookieFor(other) })).status, 404);
+    const running = (await request(endpoint, { cookie })).body.job;
+    assert.equal(running.total, 4); assert.equal(running.completed, 3);
+    assert.equal(running.processed, 1); assert.equal(running.failed, 1); assert.equal(running.ocrRequired, 1); assert.equal(running.queued, 1);
+    await Resume.updateOne({ _id: rows[3].id }, { $set: { processingStatus: 'PROCESSED' } });
+    const done = (await request(endpoint, { cookie })).body.job;
+    assert.equal(done.completed, 4); assert.equal(done.status, 'COMPLETED_WITH_ERRORS');
+    const listed = (await request(`/api/recruiter/analyses/${analysis}/resumes`, { cookie })).body.resumes;
+    assert.equal(listed.find(row => row.id === rows[1].id).processingStatus, 'OCR_REQUIRED');
+    for (const row of await Resume.find({ analysis })) {
+        assert.equal(row.rawText, undefined); assert.equal(row.pages, undefined); assert.equal(row.documentMetadata, undefined);
+    }
+    const client = require('../src/services/ai-client.service'), saved = client.request;
+    try {
+        client.request = async () => ({ accepted: true });
+        const retried = await request(endpoint, { cookie, body: { retryFailed: true } });
+        assert.equal(retried.status, 202); assert.equal(retried.body.job.total, 1);
+        const retryJob = await Job.findById(retried.body.job.id);
+        assert.deepEqual(retryJob.resumeIds.map(String), [rows[2].id]);
+        assert.equal((await Resume.findById(rows[1].id)).processingStatus, 'OCR_REQUIRED');
+    } finally { client.request = saved; }
 });
 
 test('HTTP: ZIP queues 100 individual resumes, reports rejected files and cleans temporary extraction', async () => {
