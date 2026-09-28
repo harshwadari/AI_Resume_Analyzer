@@ -50,7 +50,7 @@ test('failed files show names, errors and attempts; polling preserves page 2 and
   expect(element.textContent).toContain('unreadable.pdf');
   expect(element.textContent).toContain('File could not be read or processing timed out. (Attempts: 3)');
   startResumeProcessing.mockResolvedValue({ ...job(0), total: 1 });
-  await click('Retry failed files');
+  await click('Retry failed / OCR files');
   expect(startResumeProcessing).toHaveBeenCalledWith('analysis', true);
 });
 
@@ -76,7 +76,18 @@ test('OCR-required resumes finish progress and are clearly distinguished from ex
   expect(element.textContent).toContain('99 extracted · 1 need OCR · 0 failed');
   expect(element.textContent).toContain('scanned-resume.pdf');
   expect(element.textContent).toContain('OCR_REQUIRED');
-  expect(element.textContent).toContain('OCR required: no usable text was found.');
-  expect(element.textContent).toContain('Automatic OCR is not available yet.');
+  expect(element.textContent).toContain('OCR required: text extraction is incomplete.');
+  expect(element.textContent).toContain('Retry after OCR is configured');
   expect(element.textContent).not.toContain('1 file failed.');
+});
+
+test('processed resumes show whether native text or OCR was used', async () => {
+  getProcessingProgress.mockResolvedValue(job(100));
+  listResumes.mockResolvedValue({ total: 2, page: 1, pageSize: 50, resumes: ['text', 'ocr'].map(method => ({
+    id: method, originalFilename: `${method}.pdf`, size: 300, processingStatus: 'PROCESSED',
+    extractionMethod: method, createdAt: new Date().toISOString(),
+  })) });
+  await act(async () => root.render(<ResumeUploads analysisId="analysis" />)); await tick();
+  expect(element.textContent).toContain('Text extracted with OCR');
+  expect(element.textContent).toContain('Text extracted directly from PDF');
 });

@@ -62,7 +62,7 @@ async function request(path, { body, cookie, headers = {}, method = body === und
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
 
-test('Checkpoint 11/12: 100-PDF queue, retries, page extraction, metadata and image-only OCR status', { skip: process.env.CHECKPOINT11_QUEUE_TEST !== '1', timeout: 240000 }, async () => {
+test('Checkpoint 11/13: 100-PDF queue, retries, page extraction and real OCR fallback', { skip: process.env.CHECKPOINT11_QUEUE_TEST !== '1', timeout: 240000 }, async () => {
     const net = require('node:net'), path = require('node:path');
     const fs = require('node:fs/promises');
     const Resume = require('../src/models/resume.model');
@@ -154,7 +154,7 @@ test('Checkpoint 11/12: 100-PDF queue, retries, page extraction, metadata and im
         const rows = await Resume.find({ analysis: analysisId }).select('+rawText +pages +documentMetadata +storageReference');
         assert.ok(rows.every(row => row.processingStatus === 'PROCESSED' && row.attempts === 1 && row.rawText.includes('Senior Engineer')));
         assert.ok(rows.every(row => row.pages.length === 1 && row.pages[0].pageNumber === 1 && row.pages[0].text === row.rawText && row.documentMetadata.pageCount === 1));
-        assert.ok(rows.every(row => row.parserVersion === 'resume-text-v2-pymupdf' && row.processedAt instanceof Date));
+        assert.ok(rows.every(row => row.parserVersion === 'resume-text-v3-ocr' && row.extractionMethod === 'text' && row.processedAt instanceof Date));
         for (const row of rows) await fs.access(path.join(process.env.RESUME_STORAGE_DIR, row.storageReference));
         assert.equal((await request(endpoint, { cookie: cookieFor(other) })).status, 404);
         // Corrupt a synthetic stored fixture to exercise a genuine parser failure.
@@ -203,8 +203,8 @@ test('Checkpoint 11/12: 100-PDF queue, retries, page extraction, metadata and im
         assert.equal(extractionStart.status, 202); assert.equal(extractionStart.body.job.total, 2);
         await waitFor(async () => (await request(extractionEndpoint, { cookie })).body.job.completed === 2);
         const final = (await request(extractionEndpoint, { cookie })).body.job;
-        assert.equal(final.processed, 1); assert.equal(final.ocrRequired, 1); assert.equal(final.failed, 0);
-        assert.equal(final.status, 'COMPLETED_WITH_ERRORS'); assert.equal(final.queued, 0);
+        assert.equal(final.processed, 2); assert.equal(final.ocrRequired, 0); assert.equal(final.failed, 0);
+        assert.equal(final.status, 'COMPLETED'); assert.equal(final.queued, 0);
         const stored = await Resume.find({ analysis: extractionAnalysis }).select('+rawText +pages +documentMetadata +storageReference');
         const textResume = stored.find(row => row.originalFilename === 'text-resume.pdf');
         assert.equal(textResume.processingStatus, 'PROCESSED');
@@ -218,8 +218,10 @@ test('Checkpoint 11/12: 100-PDF queue, retries, page extraction, metadata and im
         assert.equal(textResume.documentMetadata.author, 'Test Candidate');
         assert.equal(textResume.documentMetadata.pageCount, 3);
         const imageResume = stored.find(row => row.originalFilename === 'image-resume.pdf');
-        assert.equal(imageResume.processingStatus, 'OCR_REQUIRED'); assert.equal(imageResume.rawText, '');
-        assert.equal(imageResume.pages[0].pageNumber, 1); assert.equal(imageResume.pages[0].text, '');
+        assert.equal(textResume.extractionMethod, 'text');
+        assert.equal(imageResume.processingStatus, 'PROCESSED'); assert.match(imageResume.rawText, /Python/);
+        assert.equal(imageResume.extractionMethod, 'ocr');
+        assert.equal(imageResume.pages[0].pageNumber, 1); assert.match(imageResume.pages[0].text, /Engineer/);
         assert.equal(imageResume.documentMetadata.pageCount, 1);
         for (const row of stored) {
             assert.equal(row.attempts, 1); assert.ok(row.processedAt);
@@ -227,12 +229,12 @@ test('Checkpoint 11/12: 100-PDF queue, retries, page extraction, metadata and im
             assert.deepEqual(await fs.readFile(path.join(process.env.RESUME_STORAGE_DIR, row.storageReference)), Buffer.from(fixtures[name], 'base64'));
         }
         const listed = (await request(resumesEndpoint, { cookie })).body.resumes;
-        assert.equal(listed.find(row => row.id === imageResume.id).processingStatus, 'OCR_REQUIRED');
+        assert.equal(listed.find(row => row.id === imageResume.id).extractionMethod, 'ocr');
         assert.ok(listed.every(row => !('rawText' in row) && !('pages' in row) && !('documentMetadata' in row)));
         const retryOcr = await request(extractionEndpoint, { cookie, body: { retryFailed: true } });
-        assert.equal(retryOcr.body.job.id, final.id, 'OCR-required files must not be queued as transient failures');
+        assert.equal(retryOcr.body.job.id, final.id, 'Successfully processed files must not be queued again');
         assert.equal(await Job.countDocuments({ analysis: extractionAnalysis }), 1);
-        console.log('Checkpoint 12: text/blank/rotated pages and metadata stored; image-only PDF OCR_REQUIRED; 2/2 complete, 1 extracted, 1 needs OCR, 0 failed; original bytes unchanged.');
+        console.log('Checkpoint 13: native text and real scanned-PDF OCR stored; 2/2 processed with text/ocr methods, page boundaries and original bytes preserved.');
     } finally {
         child.stdin.end('stop\n');
         await Promise.race([new Promise(resolve => child.once('exit', resolve)), new Promise(resolve => setTimeout(resolve, 25000))]);
@@ -242,7 +244,7 @@ test('Checkpoint 11/12: 100-PDF queue, retries, page extraction, metadata and im
     }
 });
 
-test('HTTP: OCR status completes progress separately from failures, remains private and is excluded from retries', async () => {
+test('HTTP: OCR status completes progress separately from failures, remains private and supports explicit retry', async () => {
     const Resume = require('../src/models/resume.model'), Job = require('../src/models/processingJob.model');
     const owner = await User.create({ username: 'ocr-owner', email: 'ocr-owner@example.com', password: 'ExamplePass9', isVerified: true });
     const other = await User.create({ username: 'ocr-other', email: 'ocr-other@example.com', password: 'ExamplePass9', isVerified: true });
@@ -276,10 +278,10 @@ test('HTTP: OCR status completes progress separately from failures, remains priv
     try {
         client.request = async () => ({ accepted: true });
         const retried = await request(endpoint, { cookie, body: { retryFailed: true } });
-        assert.equal(retried.status, 202); assert.equal(retried.body.job.total, 1);
+        assert.equal(retried.status, 202); assert.equal(retried.body.job.total, 2);
         const retryJob = await Job.findById(retried.body.job.id);
-        assert.deepEqual(retryJob.resumeIds.map(String), [rows[2].id]);
-        assert.equal((await Resume.findById(rows[1].id)).processingStatus, 'OCR_REQUIRED');
+        assert.deepEqual(retryJob.resumeIds.map(String).sort(), [rows[1].id, rows[2].id].sort());
+        assert.equal((await Resume.findById(rows[1].id)).processingStatus, 'UPLOADED');
     } finally { client.request = saved; }
 });
 

@@ -7,9 +7,10 @@ from app.models.resume_extraction import (
     DocumentMetadata, MAX_PAGES, MAX_TEXT_CHARACTERS, PAGE_SEPARATOR,
     ResumeExtraction, has_usable_text,
 )
+from app.services.ocr import OcrUnavailable, get_ocr_provider, normalize_ocr_text
 
 
-def extract(path):
+def extract(path, ocr_provider=None):
     target = Path(path)
     if target.stat().st_size > 5 * 1024 * 1024:
         raise ValueError('PDF exceeds processing size limit.')
@@ -22,8 +23,22 @@ def extract(path):
             raise ValueError('PDF must contain 1 to 50 pages.')
         pages = []
         size = 0
+        method = 'text'
+        unresolved = []
         for page in document:
             text = page.get_text('text', sort=True)
+            # Blank pages retain their position but do not need an expensive OCR pass.
+            if not has_usable_text(text) and page.get_contents():
+                try:
+                    provider = ocr_provider if ocr_provider is not None else get_ocr_provider()
+                    recognized = normalize_ocr_text(provider.extract_page(page))
+                    if has_usable_text(recognized):
+                        text = recognized
+                        method = 'ocr'
+                    else:
+                        unresolved.append(page.number + 1)
+                except OcrUnavailable:
+                    unresolved.append(page.number + 1)
             size += len(text)
             if size > MAX_TEXT_CHARACTERS:
                 raise ValueError('PDF text exceeds 100,000 characters.')
@@ -35,7 +50,9 @@ def extract(path):
             'rawText': raw_text,
             'pages': pages,
             'documentMetadata': {**metadata, 'pageCount': document.page_count},
-            'extractionStatus': 'PROCESSED' if has_usable_text(raw_text) else 'OCR_REQUIRED',
+            'extractionStatus': 'PROCESSED' if has_usable_text(raw_text) and not unresolved else 'OCR_REQUIRED',
+            'extractionMethod': method,
+            'ocrRequiredPages': unresolved,
         }).model_dump()
 
 
@@ -44,7 +61,7 @@ if __name__ == '__main__':
         if sys.platform != 'win32':
             import resource
             resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
-            resource.setrlimit(resource.RLIMIT_CPU, (25, 25))
+            resource.setrlimit(resource.RLIMIT_CPU, (90, 90))
         print(json.dumps(extract(sys.argv[1])))
     except Exception:
         print(json.dumps({'error': 'PDF is unreadable, encrypted, or exceeds processing limits.'}))

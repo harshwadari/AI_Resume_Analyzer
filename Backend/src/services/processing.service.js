@@ -35,7 +35,7 @@ async function start(recruiter, analysisId, retryFailed = false) {
             const active = await Job.findById(analysis.processingJobId).session(session);
             if (active && await Resume.exists({ jobId: active._id, processingStatus: { $in: ['UPLOADED', 'PROCESSING'] } }).session(session)) return active;
         }
-        const selected = await Resume.find({ analysis: analysisId, recruiter, processingStatus: retryFailed ? 'FAILED' : 'UPLOADED' }).select('_id').session(session);
+        const selected = await Resume.find({ analysis: analysisId, recruiter, processingStatus: retryFailed ? { $in: ['FAILED', 'OCR_REQUIRED'] } : 'UPLOADED' }).select('_id').session(session);
         if (!selected.length) {
             if (analysis.processingJobId) return Job.findById(analysis.processingJobId).session(session);
             throw new AppError('Upload resumes before starting processing.', 409);

@@ -13,7 +13,7 @@ from app.services import processing as work
 
 def extracted(text='Candidate skills'):
     return {'rawText': text, 'pages': [{'pageNumber': 1, 'text': text}],
-            'documentMetadata': {'pageCount': 1}, 'extractionStatus': 'PROCESSED' if text else 'OCR_REQUIRED'}
+            'documentMetadata': {'pageCount': 1}, 'extractionMethod': 'text', 'extractionStatus': 'PROCESSED' if text else 'OCR_REQUIRED'}
 
 
 class ProcessingTests(unittest.TestCase):

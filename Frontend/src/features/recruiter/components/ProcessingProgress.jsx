@@ -49,7 +49,7 @@ export default function ProcessingProgress({ analysisId, onProgress }) {
     {(done || job.dispatchError) && <button type="button" disabled={starting} onClick={() => start(false)} className="mt-4 mr-3 rounded-xl bg-fuchsia-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{starting ? 'Starting…' : done ? 'Process new uploads' : 'Retry queue connection'}</button>}
     {job.dispatchError && <p role="alert" className="mt-3 text-sm text-amber-800 dark:text-amber-300">{job.dispatchError}</p>}
     {job.failed > 0 && <p className="mt-3 text-sm text-rose-700 dark:text-rose-300">{job.failed} file{job.failed === 1 ? '' : 's'} failed. Review the individual statuses below and retry failed files when ready.</p>}
-    {done && <button type="button" disabled={starting} onClick={() => start(true)} className="mt-4 rounded-xl border border-amber-400 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50 dark:text-amber-300">{starting ? 'Retrying…' : 'Retry failed files'}</button>}
+    {done && <button type="button" disabled={starting} onClick={() => start(true)} className="mt-4 rounded-xl border border-amber-400 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50 dark:text-amber-300">{starting ? 'Retrying…' : 'Retry failed / OCR files'}</button>}
     {error && <p role="alert" className="mt-3 text-sm text-rose-700 dark:text-rose-300">{error}</p>}
   </section>;
 }

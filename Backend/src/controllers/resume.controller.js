@@ -4,7 +4,8 @@ const { getAnalysis } = require('../services/analysis.service');
 
 const serialize = resume => ({ id: resume.id, analysisId: String(resume.analysis), recruiterId: String(resume.recruiter),
     originalFilename: resume.originalFilename, size: resume.size, processingStatus: resume.processingStatus, createdAt: resume.createdAt,
-    jobId: resume.jobId ? String(resume.jobId) : null, attempts: resume.attempts || 0, processingError: resume.processingError || null });
+    jobId: resume.jobId ? String(resume.jobId) : null, attempts: resume.attempts || 0, processingError: resume.processingError || null,
+    extractionMethod: resume.extractionMethod || null });
 
 exports.authorizeAnalysis = asyncHandler(async (req, res, next) => {
     await getAnalysis(req.user.id, req.params.analysisId);

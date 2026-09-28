@@ -54,7 +54,7 @@ node --test --test-name-pattern='Checkpoint 11' test/database.test.js
 
 The harness uses real HTTP uploads, FastAPI, Celery workers, PDF extraction subprocesses, and an isolated MongoDB replica set. Set `TEST_REDIS_SERVER` to an absolute `redis-server` executable path to run a private real Redis process, verify queue persistence across a Redis restart, and restart the worker mid-batch. With this variable omitted, the harness uses fakeredis TCP with RESP2/Lua support. Both modes passed the 100-PDF flow; see `../CHECKPOINT_11.md` for exact evidence and the local Redis build/checksum. Frontend DOM tests separately verify polling and rendering. Ordinary Node test runs skip the optional integration test; no production database or Gemini API is used.
 
-## Resume text extraction (Checkpoint 12)
+## Resume text extraction and OCR (Checkpoints 12–13)
 
 Install the updated `requirements.txt` and restart the worker when upgrading: `PyMuPDF==1.28.2` replaces the earlier `pypdf` parser. The supported import is `pymupdf` (the library is also historically known as `fitz`). Do not install the unrelated package named `fitz`.
 
@@ -63,17 +63,31 @@ The existing isolated worker subprocess extracts PDF text with `page.get_text('t
 - `rawText`: exact extracted page strings joined with a form-feed character (`\f`) between pages.
 - `pages`: every page, including empty ones, as `{pageNumber, text}` with consecutive one-based PDF page numbers.
 - `documentMetadata`: `pageCount`, `format`, `title`, `author`, `subject`, `keywords`, `creator`, `producer`, `creationDate`, `modDate`, and `trapped`. PDF date strings are retained as supplied by the document; unavailable text metadata is an empty string.
-- `parserVersion`: `resume-text-v2-pymupdf`; `processedAt`: the worker completion timestamp.
+- `parserVersion`: `resume-text-v3-ocr`; `processedAt`: the worker completion timestamp.
 
 Pydantic validates the subprocess response, page count/order, bounded text/metadata, exact raw-text/page correspondence and extraction outcome before persistence. Existing private original files are read without rewriting them. Raw text, pages and document metadata are excluded from ordinary Mongoose queries and paginated resume responses.
 
-At least one Unicode letter is required for usable text; whitespace, replacement glyphs, punctuation and page numbers alone produce terminal `OCR_REQUIRED`. This is a text-presence check, not a measure of candidate or resume quality. The frontend identifies those files and counts them separately from `FAILED`. Jobs with OCR-required files finish as `COMPLETED_WITH_ERRORS`; completed counts include those files. Automatic retries and the retry-failed action do not queue OCR-required records. No OCR engine or AI matching is included.
+Checkpoint 13 adds page-level OCR fallback through a replaceable `OcrProvider` interface. Native text is tried first. A conservative text-presence check requires 12 Unicode letters (or five CJK characters), with no more replacement glyphs than letters. This is a routing heuristic, not a resume-quality or hiring score. Sufficient native text bypasses OCR completely. Empty pages keep their page numbers without invoking OCR. Insufficient nonblank pages use local Tesseract through PyMuPDF; normalized OCR text keeps line breaks and Unicode. No documents are sent to an external OCR provider.
 
-Mixed PDFs retain empty image pages and remain `PROCESSED` if other pages have text. Spatial text sorting is an approximation of reading order, not a semantic layout parser. Existing 5 MiB, 50-page, 100,000-text-character and 35-second limits remain; each metadata string is limited to 10,000 characters. Oversized output fails rather than being silently truncated. Unreadable or encrypted PDFs fail individually.
+Mixed PDFs retain native text and OCR only insufficient pages. MongoDB stores `extractionMethod: "text" | "ocr"`; `ocr` means at least one page contributed usable OCR text. `ocrRequiredPages` privately records unresolved pages. Missing language data, unreadable scans and page rendering limits remain `OCR_REQUIRED`, including partially extracted documents. The UI explains incomplete extraction; **Retry failed / OCR files** explicitly retries these and failed files after configuration is corrected. They are not automatically retried indefinitely. Completely blank PDFs also remain `OCR_REQUIRED`.
 
-Existing v1 records remain unchanged and have no fabricated page boundaries. Upload a new copy and process it to generate v2 extraction data; this checkpoint does not run a migration or automatically reprocess old resumes.
+Existing 5 MiB, 50-page, 100,000-text-character and 10,000-character metadata limits remain. OCR renders at 200 DPI with a 16-million-pixel cap per page. The parser has a 95-second wall timeout (90-second CPU limit on Unix), below the 120-second worker lease. Worker concurrency remains two. Timeout retries remain bounded. Complex or large scans can exceed these limits; low-quality images, unsupported languages and unusual layouts may need a clearer PDF. Text sufficiency does not detect every corrupt text layer. Originals are never rewritten; spatial reading order remains approximate.
 
-The optional queue test above now also uploads a three-page text resume (including a blank page and a rotated page) and an image-only resume through HTTP. It verifies stored page text/metadata, `OCR_REQUIRED`, separate progress counts, and unchanged original bytes with real MongoDB and Celery. See `../CHECKPOINT_12.md` for the verification report.
+Existing processed records remain untouched, without a migration or fabricated extraction methods. Explicitly retry previous `OCR_REQUIRED` files, or upload a new copy of an older processed resume to apply v3 extraction.
+
+### Enable OCR once
+
+From `ai-service`:
+
+```powershell
+.venv/Scripts/python scripts/setup_ocr.py
+```
+
+This downloads the pinned, checksum-verified English [tessdata_fast 4.1.0 model](https://github.com/tesseract-ocr/tessdata_fast/tree/4.1.0) (Apache-2.0) to ignored `.ocr/tessdata/eng.traineddata`. Do this during setup/deployment, never in a request. PyMuPDF already includes the OCR runtime; only language data is needed when an explicit tessdata path is supplied ([PyMuPDF documentation](https://pymupdf.readthedocs.io/en/latest/installation.html#enabling-integrated-ocr-support)). No extra Python/npm package or running service is added.
+
+Optional worker environment settings: `OCR_PROVIDER=tesseract` (default; `disabled` disables fallback), `OCR_LANGUAGES=eng` (use `eng+spa` with corresponding installed data), `OCR_TESSDATA_DIR` (absolute directory override; otherwise `TESSDATA_PREFIX` or the project-local directory). Python does not automatically load `.env`. Install data on every worker host/shared image and restart Celery after code/config changes. The API health endpoint remains a liveness check, not an OCR readiness check.
+
+The optional queue test also uploads a three-page text resume and an image-only resume through HTTP, verifies real OCR, MongoDB methods/pages, separate progress counts and unchanged originals. Run setup above before the optional queue test. Unit tests always cover the injectable adapter and no-OCR native path; the real-engine unit test skips explicitly when English data is missing. See `../CHECKPOINT_13.md` for the checkpoint report.
 
 ## API and authentication
 

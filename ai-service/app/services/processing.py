@@ -12,9 +12,9 @@ from app.core.celery_app import celery
 from app.core.database import database
 from app.models.resume_extraction import ResumeExtraction
 
-PARSER_VERSION = 'resume-text-v2-pymupdf'
+PARSER_VERSION = 'resume-text-v3-ocr'
 MAX_ATTEMPTS = 3
-PARSER_TIMEOUT_SECONDS = 35
+PARSER_TIMEOUT_SECONDS = 95
 
 
 def now():

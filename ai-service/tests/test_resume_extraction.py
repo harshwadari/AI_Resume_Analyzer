@@ -12,6 +12,9 @@ from tests.resume_pdf_fixtures import image_resume, text_resume
 
 class ResumeExtractionTests(unittest.TestCase):
     def setUp(self):
+        disabled = patch.dict('os.environ', {'OCR_PROVIDER': 'disabled'})
+        disabled.start()
+        self.addCleanup(disabled.stop)
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.path = Path(folder.name) / 'resume.pdf'
@@ -63,7 +66,8 @@ class ResumeExtractionTests(unittest.TestCase):
             with pymupdf.open(stream=image_resume(), filetype='pdf') as scanned:
                 document.insert_pdf(scanned)
             result = self.read(document.tobytes())
-        self.assertEqual(result['extractionStatus'], 'PROCESSED')
+        self.assertEqual(result['extractionStatus'], 'OCR_REQUIRED')
+        self.assertEqual(result['ocrRequiredPages'], [4])
         self.assertEqual(result['documentMetadata']['pageCount'], 4)
         self.assertEqual(result['pages'][3], {'pageNumber': 4, 'text': ''})
 
@@ -110,6 +114,9 @@ class ResumeExtractionTests(unittest.TestCase):
             lambda data: data['pages'][0].update(text='x' * 100001),
             lambda data: data['documentMetadata'].update(author='x' * 10001),
             lambda data: data.update(unexpectedField='not allowed'),
+            lambda data: data.update(extractionMethod='unvalidated-provider'),
+            lambda data: data.update(ocrRequiredPages=[0]),
+            lambda data: data.update(ocrRequiredPages=[1, 1]),
         ]
         for index, change in enumerate(changes):
             with self.subTest(case=index):

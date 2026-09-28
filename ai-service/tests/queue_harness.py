@@ -65,9 +65,13 @@ try:
         print('REDIS_RESTARTED', flush=True)
         command = sys.stdin.readline().strip()
     while command in ['start', 'restart-worker']:
-        with start_worker(celery, pool='threads', concurrency=2, perform_ping_check=False, shutdown_timeout=20):
+        with start_worker(celery, pool='threads', concurrency=2, perform_ping_check=False, shutdown_timeout=20) as worker:
             print('WORKER_READY', flush=True)
             command = sys.stdin.readline().strip()
+        # Celery's embedded test context cold-stops the consumer, but the thread
+        # pool cannot terminate running tasks. Drain it before creating another
+        # worker so this restart does not accidentally test two workers at once.
+        worker.pool.executor.shutdown(wait=True)
 finally:
     server.should_exit = True
     if real_redis:

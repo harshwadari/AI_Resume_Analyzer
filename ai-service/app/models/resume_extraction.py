@@ -10,7 +10,9 @@ PAGE_SEPARATOR = '\f'
 def has_usable_text(text: str) -> bool:
     # Whitespace, replacement glyphs, punctuation and page numbers alone are
     # not usable resume text. Unicode letters support non-English resumes too.
-    return any(character.isalpha() for character in text)
+    letters = sum(character.isalpha() for character in text)
+    cjk = sum('\u3400' <= character <= '\u9fff' for character in text)
+    return (letters >= 12 or cjk >= 5) and text.count('\ufffd') <= letters
 
 
 class ResumePage(BaseModel):
@@ -40,6 +42,8 @@ class ResumeExtraction(BaseModel):
     pages: list[ResumePage] = Field(min_length=1, max_length=MAX_PAGES)
     documentMetadata: DocumentMetadata
     extractionStatus: Literal['PROCESSED', 'OCR_REQUIRED']
+    extractionMethod: Literal['text', 'ocr']
+    ocrRequiredPages: list[int] = Field(default_factory=list, max_length=MAX_PAGES)
 
     @model_validator(mode='after')
     def consistent_document(self):
@@ -51,7 +55,11 @@ class ResumeExtraction(BaseModel):
             raise ValueError('PDF text exceeds 100,000 characters.')
         if self.rawText != PAGE_SEPARATOR.join(page.text for page in self.pages):
             raise ValueError('Raw text must preserve every page and its boundary.')
-        expected = 'PROCESSED' if has_usable_text(self.rawText) else 'OCR_REQUIRED'
+        if self.ocrRequiredPages != sorted(set(self.ocrRequiredPages)) or any(
+            page < 1 or page > len(self.pages) for page in self.ocrRequiredPages
+        ):
+            raise ValueError('OCR-required pages must be unique, ordered and within the document.')
+        expected = 'PROCESSED' if has_usable_text(self.rawText) and not self.ocrRequiredPages else 'OCR_REQUIRED'
         if self.extractionStatus != expected:
             raise ValueError('Extraction status does not match usable text.')
         return self

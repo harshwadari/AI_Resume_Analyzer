@@ -22,6 +22,8 @@ const schema = new mongoose.Schema({
     processingError: String,
     processedAt: Date,
     parserVersion: String,
+    extractionMethod: { type: String, enum: ['text', 'ocr'] },
+    ocrRequiredPages: { type: [Number], default: undefined, select: false },
     rawText: { type: String, select: false },
     pages: { type: [pageSchema], default: undefined, select: false },
     documentMetadata: { type: metadataSchema, default: undefined, select: false },
