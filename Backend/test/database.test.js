@@ -62,6 +62,35 @@ async function request(path, { body, cookie, headers = {}, method = body === und
 }
 const cookieFrom = res => res.headers.get('set-cookie')?.split(';')[0];
 
+test('HTTP: candidate profiles and lossless chunks are private, owner scoped, and versioned', async () => {
+    const Resume = require('../src/models/resume.model');
+    const owner = await User.create({ username: 'profile-owner', email: 'profile-owner@example.com', password: 'ExamplePass9', isVerified: true });
+    const other = await User.create({ username: 'profile-other', email: 'profile-other@example.com', password: 'ExamplePass9', isVerified: true });
+    const cookieFor = user => 'token=' + require('jsonwebtoken').sign({ id: user.id, tokenVersion: 0, jti: crypto.randomUUID() }, process.env.JWT_SECRET,
+        { algorithm: 'HS256', issuer: 'prepwise', audience: 'prepwise-web', expiresIn: '1h' });
+    const cookie = cookieFor(owner);
+    const analysis = (await request('/api/recruiter/analyses', { cookie, body: { rawJDText: 'Profile review test: hire an engineer experienced with Python, reliable service development, code reviews, automated tests and team collaboration.' } })).body.analysis.id;
+    const row = await Resume.create({ analysis, recruiter: owner.id, originalFilename: 'resume.pdf', storageReference: `${crypto.randomUUID()}.pdf`, size: 100,
+        processingStatus: 'PROCESSED', rawText: 'Example\nSkills\nPython', profileParserVersion: 'candidate-v1', profileModelVersion: 'fixture-v1', profileExtractedAt: new Date(),
+        candidateProfile: { candidateName: 'Example', email: null, skills: ['Python'], rawText: 'Example\nSkills\nPython' },
+        resumeChunks: [{ section: 'skills', text: 'Example\nSkills\nPython', pageStart: 1, pageEnd: 1, chunkIndex: 0, sourceStart: 0, sourceEnd: 21 }] });
+    const endpoint = `/api/recruiter/analyses/${analysis}/resumes/${row.id}`;
+    assert.equal((await request(endpoint)).status, 401);
+    assert.equal((await request(endpoint, { cookie: cookieFor(other) })).status, 404);
+    assert.equal((await request(endpoint.replace(row.id, 'invalid'), { cookie })).status, 404);
+    const result = await request(endpoint, { cookie });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.resume.candidateProfile.email, null);
+    assert.equal(result.body.resume.modelVersion, 'fixture-v1');
+    assert.equal(result.body.resume.chunks.map(c => c.text).join(''), result.body.resume.rawText);
+    assert.equal(result.body.resume.candidateId, row.id);
+    assert.equal(result.body.resume.storageReference, undefined);
+    const list = (await request(`/api/recruiter/analyses/${analysis}/resumes`, { cookie })).body.resumes;
+    assert.equal(list[0].hasProfile, true); assert.equal(list[0].candidateProfile, undefined);
+    const ordinary = await Resume.findById(row.id);
+    assert.equal(ordinary.candidateProfile, undefined); assert.equal(ordinary.resumeChunks, undefined);
+});
+
 test('Checkpoint 11/13: 100-PDF queue, retries, page extraction and real OCR fallback', { skip: process.env.CHECKPOINT11_QUEUE_TEST !== '1', timeout: 240000 }, async () => {
     const net = require('node:net'), path = require('node:path');
     const fs = require('node:fs/promises');
@@ -205,7 +234,7 @@ test('Checkpoint 11/13: 100-PDF queue, retries, page extraction and real OCR fal
         const final = (await request(extractionEndpoint, { cookie })).body.job;
         assert.equal(final.processed, 2); assert.equal(final.ocrRequired, 0); assert.equal(final.failed, 0);
         assert.equal(final.status, 'COMPLETED'); assert.equal(final.queued, 0);
-        const stored = await Resume.find({ analysis: extractionAnalysis }).select('+rawText +pages +documentMetadata +storageReference');
+        const stored = await Resume.find({ analysis: extractionAnalysis }).select('+rawText +pages +documentMetadata +storageReference +candidateProfile +resumeChunks');
         const textResume = stored.find(row => row.originalFilename === 'text-resume.pdf');
         assert.equal(textResume.processingStatus, 'PROCESSED');
         assert.deepEqual(textResume.pages.map(page => page.pageNumber), [1, 2, 3]);
@@ -225,6 +254,10 @@ test('Checkpoint 11/13: 100-PDF queue, retries, page extraction and real OCR fal
         assert.equal(imageResume.documentMetadata.pageCount, 1);
         for (const row of stored) {
             assert.equal(row.attempts, 1); assert.ok(row.processedAt);
+            assert.equal(row.candidateProfile.rawText, row.rawText);
+            assert.equal(row.resumeChunks.map(chunk => chunk.text).join(''), row.rawText);
+            assert.equal(row.profileModelVersion, 'offline-fixture-v1');
+            assert.ok(row.resumeChunks.every(chunk => chunk.resumeId === row.id && chunk.candidateId === row.id && chunk.analysisId === extractionAnalysis));
             const name = row.originalFilename.split('-')[0];
             assert.deepEqual(await fs.readFile(path.join(process.env.RESUME_STORAGE_DIR, row.storageReference)), Buffer.from(fixtures[name], 'base64'));
         }

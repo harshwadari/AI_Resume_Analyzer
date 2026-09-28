@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { listResumes, uploadResumes } from '../services/analysis.api';
 import BulkResumeImport from './BulkResumeImport';
 import ProcessingProgress from './ProcessingProgress';
+import ResumeProfile from './ResumeProfile';
 
 export default function ResumeUploads({ analysisId }) {
   const [state, setState] = useState({ resumes: [], total: 0, page: 1, pageSize: 50 });
@@ -49,7 +50,7 @@ export default function ResumeUploads({ analysisId }) {
   const onProgress = useCallback(job => { if (job) refresh(state.page, true); }, [refresh, state.page]);
   return <section aria-label="Analysis resumes" className="mt-8 rounded-2xl border border-slate-200 p-5 dark:border-white/10">
     <h3 className="text-lg font-semibold">Candidate resumes</h3>
-    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Upload 1–10 PDFs at a time, up to 5 MB each. Files are stored privately. Start processing below to extract resume text.</p>
+    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Upload 1–10 PDFs at a time, up to 5 MB each. Files are stored privately. Start processing below to extract text, candidate profiles and source chunks.</p>
     <label className="mt-4 block text-sm font-medium">Choose resume PDFs<input ref={picker} type="file" accept=".pdf,application/pdf" multiple disabled={busy || loading} className="mt-2 block w-full text-sm" onChange={event => {
       const selected = Array.from(event.target.files || []);
       setFiles([]); setError(''); setMessage('');
@@ -76,6 +77,7 @@ export default function ResumeUploads({ analysisId }) {
         {resume.processingStatus === 'OCR_REQUIRED' && <p className="mt-1 text-amber-800 dark:text-amber-300">OCR required: text extraction is incomplete. OCR may be unavailable or the scan may be unreadable. The original PDF is preserved. Retry after OCR is configured, or upload a clearer PDF.</p>}
         {resume.processingError && <p className="mt-1 text-rose-700 dark:text-rose-300">{resume.processingError} (Attempts: {resume.attempts})</p>}
         <p className="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">ID: {resume.id} · {new Date(resume.createdAt).toLocaleString()}</p>
+        {resume.hasProfile && <ResumeProfile analysisId={analysisId} resumeId={resume.id} />}
       </li>)}</ul>
       {state.total > state.pageSize && <div className="mt-4 flex items-center gap-4 text-sm"><button type="button" disabled={busy || state.page <= 1} onClick={() => refresh(state.page - 1)}>Previous</button><span>Page {state.page} of {Math.ceil(state.total / state.pageSize)}</span><button type="button" disabled={busy || state.page * state.pageSize >= state.total} onClick={() => refresh(state.page + 1)}>Next</button></div>}
     </>}

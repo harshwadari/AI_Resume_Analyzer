@@ -31,3 +31,5 @@ export const startResumeProcessing = async (analysisId, retryFailed = false, opt
   (await api.post(`/api/recruiter/analyses/${encodeURIComponent(analysisId)}/processing`, { retryFailed }, options)).data.job;
 export const getProcessingProgress = async (analysisId, options = {}) =>
   (await api.get(`/api/recruiter/analyses/${encodeURIComponent(analysisId)}/processing`, options)).data.job;
+export const getResumeProfile = async (analysisId, resumeId, options = {}) =>
+  (await api.get(`/api/recruiter/analyses/${encodeURIComponent(analysisId)}/resumes/${encodeURIComponent(resumeId)}`, options)).data.resume;

@@ -52,6 +52,11 @@ import uvicorn
 from celery.contrib.testing.worker import start_worker
 from app.core.celery_app import celery
 from app.main import app
+from app.services import processing
+from tests.candidate_fixtures import fixture_profile
+# Queue tests never send private fixtures to a paid model. Live model acceptance
+# is a separate explicit review; this still exercises validation and persistence.
+processing.build_profile = fixture_profile
 
 server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=int(os.environ['TEST_AI_PORT']), log_level='error'))
 threading.Thread(target=server.run, daemon=True).start()

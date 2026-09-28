@@ -7,7 +7,7 @@ celery.conf.update(
     task_ignore_result=True, worker_concurrency=2, worker_prefetch_multiplier=1,
     task_acks_late=True, task_reject_on_worker_lost=True,
     broker_connection_retry_on_startup=True,
-    broker_transport_options={'visibility_timeout': 180, 'socket_connect_timeout': 3, 'socket_timeout': 3},
+    broker_transport_options={'visibility_timeout': 300, 'socket_connect_timeout': 3, 'socket_timeout': 3},
     task_publish_retry=False,
     beat_schedule={'recover-publication-and-leases': {'task': 'processing.reconcile', 'schedule': 30.0}},
 )

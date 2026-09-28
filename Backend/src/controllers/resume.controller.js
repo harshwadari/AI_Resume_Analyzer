@@ -5,7 +5,7 @@ const { getAnalysis } = require('../services/analysis.service');
 const serialize = resume => ({ id: resume.id, analysisId: String(resume.analysis), recruiterId: String(resume.recruiter),
     originalFilename: resume.originalFilename, size: resume.size, processingStatus: resume.processingStatus, createdAt: resume.createdAt,
     jobId: resume.jobId ? String(resume.jobId) : null, attempts: resume.attempts || 0, processingError: resume.processingError || null,
-    extractionMethod: resume.extractionMethod || null });
+    extractionMethod: resume.extractionMethod || null, hasProfile: Boolean(resume.profileExtractedAt) });
 
 exports.authorizeAnalysis = asyncHandler(async (req, res, next) => {
     await getAnalysis(req.user.id, req.params.analysisId);
@@ -18,6 +18,9 @@ exports.upload = asyncHandler(async (req, res) => {
 exports.list = asyncHandler(async (req, res) => {
     const result = await service.list(req.user.id, req.params.analysisId, req.query.page);
     res.json({ success: true, ...result, resumes: result.resumes.map(serialize) });
+});
+exports.detail = asyncHandler(async (req, res) => {
+    res.json({ success: true, resume: await service.detail(req.user.id, req.params.analysisId, req.params.resumeId) });
 });
 exports.startProcessing = asyncHandler(async (req, res) => {
     res.status(202).json({ success: true, ...await require('../services/processing.service').start(req.user.id, req.params.analysisId, req.body.retryFailed) });

@@ -7,7 +7,7 @@ import { getProcessingProgress, startResumeProcessing, listResumes } from '../sr
 
 vi.mock('../src/features/recruiter/services/analysis.api', () => ({
   getProcessingProgress: vi.fn(), startResumeProcessing: vi.fn(), listResumes: vi.fn(),
-  uploadResumes: vi.fn(), uploadResumeZip: vi.fn(),
+  uploadResumes: vi.fn(), uploadResumeZip: vi.fn(), getResumeProfile: vi.fn(),
 }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let root, element;

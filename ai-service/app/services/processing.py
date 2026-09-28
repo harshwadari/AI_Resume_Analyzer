@@ -11,6 +11,8 @@ from pymongo.errors import PyMongoError
 from app.core.celery_app import celery
 from app.core.database import database
 from app.models.resume_extraction import ResumeExtraction
+from app.services.candidate import build_profile, ProfileUnavailable
+from app.services.resume_chunks import build_chunks
 
 PARSER_VERSION = 'resume-text-v3-ocr'
 MAX_ATTEMPTS = 3
@@ -63,7 +65,7 @@ def finish_job(db, job):
         db.processingjobs.update_one({'_id': job['_id']}, {'$set': {'status': 'COMPLETED_WITH_ERRORS' if failed else 'COMPLETED', 'updatedAt': now()}, '$unset': {'dispatchError': ''}})
 
 
-def process_one(job_id, resume_id, parser=None):
+def process_one(job_id, resume_id, parser=None, profile_builder=None):
     db = database()
     job = db.processingjobs.find_one({'_id': ObjectId(job_id)})
     if not job or ObjectId(resume_id) not in job['resumeIds']:
@@ -77,7 +79,7 @@ def process_one(job_id, resume_id, parser=None):
         '_id': ObjectId(resume_id), 'jobId': job['_id'], 'recruiter': job['recruiter'], 'analysis': job['analysis'],
         '$or': [{'processingStatus': 'UPLOADED', '$or': [{'nextAttemptAt': {'$exists': False}}, {'nextAttemptAt': {'$lte': now()}}]},
                 {'processingStatus': 'PROCESSING', 'leaseUntil': {'$lte': now()}}],
-    }, {'$set': {'processingStatus': 'PROCESSING', 'leaseUntil': now() + timedelta(seconds=120), 'claimToken': token, 'updatedAt': now()},
+    }, {'$set': {'processingStatus': 'PROCESSING', 'leaseUntil': now() + timedelta(seconds=240), 'claimToken': token, 'updatedAt': now()},
         '$inc': {'attempts': 1}}, return_document=ReturnDocument.AFTER)
     if not record:
         finish_job(db, job)
@@ -88,14 +90,25 @@ def process_one(job_id, resume_id, parser=None):
         if record['attempts'] > MAX_ATTEMPTS:
             raise ValueError('Processing retry limit reached.')
         extraction = ResumeExtraction.model_validate((parser or parse_resume)(record))
+        # Persist original extraction before the remote stage, including on model failure.
+        written = db.resumes.update_one(query, {'$set': {**extraction.model_dump(exclude={'extractionStatus'}),
+            'parserVersion': PARSER_VERSION, 'updatedAt': now()}})
+        if not written.matched_count:
+            return 'SKIPPED'
+        enriched = {}
+        if extraction.extractionStatus == 'PROCESSED':
+            enriched = (profile_builder or build_profile)(extraction)
+            enriched.update(build_chunks(extraction, enriched['candidateProfile'], str(job['analysis']), str(record['_id'])))
         db.resumes.update_one(query, {'$set': {**extraction.model_dump(exclude={'extractionStatus'}),
+                                             **enriched,
                                              'processingStatus': extraction.extractionStatus, 'processedAt': now(), 'parserVersion': PARSER_VERSION, 'updatedAt': now()},
                                      '$unset': {'processingError': '', 'leaseUntil': '', 'claimToken': '', 'nextAttemptAt': ''}})
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as error:
         terminal = record['attempts'] >= MAX_ATTEMPTS
+        delay = getattr(error, 'retry_after', None) or 5 * 2 ** (record['attempts'] - 1)
         db.resumes.update_one(query, {'$set': {'processingStatus': 'FAILED' if terminal else 'UPLOADED',
-                                             'processingError': 'File could not be read or processing timed out.' if terminal else 'Temporary processing failure; retry scheduled.',
-                                             'nextAttemptAt': now() + timedelta(seconds=5 * 2 ** (record['attempts'] - 1)), 'updatedAt': now()},
+                                             'processingError': ('Structured extraction unavailable or unsupported by evidence. Retry after checking the resume model configuration.' if isinstance(error, ProfileUnavailable) else 'File could not be read or processing timed out.') if terminal else 'Temporary processing failure; retry scheduled.',
+                                             'nextAttemptAt': now() + timedelta(seconds=delay), 'updatedAt': now()},
                                      '$unset': {'leaseUntil': '', 'claimToken': '', 'publishedAt': ''}})
         if not terminal:
             return 'RETRY'
@@ -111,7 +124,10 @@ def process_resume(self, job_id, resume_id):
     try:
         outcome = process_one(job_id, resume_id)
         if outcome == 'RETRY':
-            raise self.retry(countdown=min(60, 5 * 2 ** self.request.retries))
+            record = database().resumes.find_one({'_id': ObjectId(resume_id), 'jobId': ObjectId(job_id)}, {'nextAttemptAt': 1})
+            due = record.get('nextAttemptAt') if record else None
+            delay = max(1, (due.replace(tzinfo=timezone.utc) - now()).total_seconds()) if due else 5
+            raise self.retry(countdown=min(300, delay))
     except PyMongoError:
         raise self.retry(exc=RuntimeError('Worker database temporarily unavailable'), countdown=30) from None
 

@@ -18,6 +18,10 @@ def extracted(text='Candidate skills'):
 
 class ProcessingTests(unittest.TestCase):
     def setUp(self):
+        from tests.candidate_fixtures import fixture_profile
+        profile_patch = patch.object(work, 'build_profile', side_effect=fixture_profile)
+        profile_patch.start()
+        self.addCleanup(profile_patch.stop)
         self.db = mongomock.MongoClient(tz_aware=True).test
         self.owner, self.analysis, self.job, self.resume = [ObjectId() for _ in range(4)]
         self.db.users.insert_one({'_id': self.owner})

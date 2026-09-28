@@ -40,4 +40,17 @@ async function list(recruiter, analysis, page = '1') {
     ]);
     return { resumes, total, page: Number(page), pageSize };
 }
-module.exports = { upload, list };
+async function detail(recruiter, analysis, resumeId) {
+    await getAnalysis(recruiter, analysis);
+    if (!mongoose.isObjectIdOrHexString(resumeId)) throw new AppError('Resume not found.', 404);
+    const resume = await Resume.findOne({ _id: resumeId, analysis, recruiter })
+        .select('+candidateProfile +resumeChunks +rawText +pages +sourceTextHash');
+    if (!resume) throw new AppError('Resume not found.', 404);
+    return { id: resume.id, candidateId: resume.id, analysisId: String(resume.analysis),
+        processingStatus: resume.processingStatus, candidateProfile: resume.candidateProfile || null,
+        chunks: resume.resumeChunks || [], rawText: resume.rawText ?? null, pages: resume.pages || [],
+        parserVersion: resume.profileParserVersion || null, modelName: resume.profileModel || null,
+        modelVersion: resume.profileModelVersion || null, extractedAt: resume.profileExtractedAt || null,
+        chunkerVersion: resume.chunkerVersion || null, sourceTextHash: resume.sourceTextHash || null };
+}
+module.exports = { upload, list, detail };
