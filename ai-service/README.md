@@ -10,20 +10,30 @@ From `ai-service`, with Python 3.12:
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt
 $env:AI_SERVICE_TOKEN = '<random shared secret: at least 32 characters>'
-.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 Generate the shared secret using a password manager or `python -c "import secrets; print(secrets.token_hex(32))"`. Supply it to both services through their process environment or deployment secret manager. The `.env.example` is a reference; Python does not automatically load it. Do not commit secrets or put them in frontend variables.
 
 For existing JD extraction, also set `GOOGLE_GEN_API_KEY` and optionally `JD_MODEL` (default `gemini-2.5-flash`). Neither Gemini credentials nor a database is needed to start or check health.
 
-In the backend `.env`, set `AI_SERVICE_URL=http://127.0.0.1:8000` and the same `AI_SERVICE_TOKEN`. From `Backend`:
+In the backend `.env`, set `AI_SERVICE_URL=http://127.0.0.1:8001` and the same `AI_SERVICE_TOKEN`. From `Backend`:
 
 ```powershell
 node scripts/check-ai-health.js
 ```
 
 Expected output: `{"status":"ok","service":"prepwise-ai"}`. Failure produces a sanitized error and a nonzero exit code. The health client has a five-second timeout. The existing Node `/health` remains unchanged.
+
+Windows convenience commands (each in its own terminal, from `ai-service`):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 api
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 worker
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 beat
+```
+
+The helper reads this service's `.env` without displaying values and uses this directory's virtualenv directly. It does not need virtualenv activation and does not change the machine's execution policy. The API defaults to port 8001; use `-Port` only when also updating the backend URL. It runs without reload to avoid an extra reloader process. Port 8000 was occupied by a different Python service during local troubleshooting; that service was left untouched. See `../TESTING_THROUGH_CHECKPOINT_15.md` for Redis startup, all terminals and the manual test checklist.
 
 ## Resume processing worker
 
@@ -43,7 +53,7 @@ Each resume has a deterministic task ID, a MongoDB lease, a maximum of three doc
 
 Use a Linux worker for deployment (the Windows threads command above is for local development). Run one worker with `--concurrency=2 --prefetch-multiplier=1`; adding worker replicas increases total concurrency. Run one beat instance. Configure persistent Redis storage and mount the same private resume directory into Node and the worker. The Python Mongo URI/database must point to the same database as Node. A running health endpoint alone does not mean Redis or the worker is available.
 
-Transient read/timeout errors retry with backoff. MongoDB records retain pending publication intent across broker outages; beat recovers due retries, expired 120-second processing leases, and publication reservations older than five minutes. At-least-once delivery is expected: Mongo claims and claim tokens, rather than task IDs alone, prevent duplicate writes. Existing originals remain available. This checkpoint extracts raw text; candidate matching and AI requests are not performed.
+Transient read/timeout errors retry with backoff. MongoDB records retain pending publication intent across broker outages; beat recovers due retries, expired processing leases (240 seconds with profile extraction), and publication reservations older than five minutes. At-least-once delivery is expected: Mongo claims and claim tokens, rather than task IDs alone, prevent duplicate writes. Existing originals remain available. The current pipeline includes profile extraction and chunks as described below; candidate matching is not implemented.
 
 For the reproducible isolated queue test, install `requirements-test.txt` in this virtual environment, then run from `Backend`:
 

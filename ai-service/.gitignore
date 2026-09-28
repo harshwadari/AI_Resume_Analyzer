@@ -6,3 +6,4 @@ celerybeat-schedule*
 .test-tools/
 .ocr/
 .review/
+.redis-data/
